@@ -54,7 +54,7 @@ pub struct WhatsAppConfig {
 impl Default for WhatsAppConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             phone_number: None,
         }
     }
