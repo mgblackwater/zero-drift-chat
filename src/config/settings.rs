@@ -144,4 +144,18 @@ impl AppConfig {
             Ok(Self::default())
         }
     }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let toml_str = toml::to_string_pretty(self)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize config: {}", e))?;
+        let content = format!(
+            "# zero-drift-chat configuration\n# Edit manually or via in-app settings (s)\n\n{}",
+            toml_str
+        );
+        std::fs::write(path, content)?;
+        Ok(())
+    }
 }

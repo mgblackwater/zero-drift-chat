@@ -83,6 +83,7 @@ pub struct UnifiedChat {
     pub id: String,
     pub platform: Platform,
     pub name: String,
+    pub display_name: Option<String>,
     pub last_message: Option<String>,
     pub unread_count: u32,
     pub is_group: bool,

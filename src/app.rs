@@ -1,4 +1,5 @@
 use std::io;
+use std::path::PathBuf;
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -14,7 +15,7 @@ use crate::core::MessageRouter;
 use crate::providers::mock::MockProvider;
 use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::Database;
-use crate::tui::app_state::AppState;
+use crate::tui::app_state::{AppState, InputMode};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
@@ -24,15 +25,17 @@ pub struct App {
     router: MessageRouter,
     db: Database,
     config: AppConfig,
+    config_path: PathBuf,
 }
 
 impl App {
-    pub fn new(config: AppConfig, db: Database) -> Self {
+    pub fn new(config: AppConfig, db: Database, config_path: PathBuf) -> Self {
         Self {
             state: AppState::new(),
             router: MessageRouter::new(),
             db,
             config,
+            config_path,
         }
     }
 
@@ -198,8 +201,8 @@ impl App {
                             if chat.last_message.is_some() {
                                 existing.last_message = chat.last_message;
                             }
-                            // Only update name if the new name looks like a real name
-                            // (not a raw phone number) or if existing is still a number
+                            // Don't touch display_name — it's user-set
+                            // Only update provider name if it looks better
                             let existing_is_numeric = existing.name.chars().all(|c| c.is_ascii_digit() || c == '+');
                             let new_is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
                             if !new_is_numeric || existing_is_numeric {
@@ -311,6 +314,69 @@ impl App {
             }
             Action::ScrollDown => {
                 self.state.scroll_down();
+            }
+            Action::OpenSettings => {
+                self.state.open_settings(&self.config);
+            }
+            Action::SettingsNext => {
+                if let Some(ref mut s) = self.state.settings_state {
+                    s.select_next();
+                }
+            }
+            Action::SettingsPrev => {
+                if let Some(ref mut s) = self.state.settings_state {
+                    s.select_prev();
+                }
+            }
+            Action::SettingsToggle => {
+                if let Some(ref mut s) = self.state.settings_state {
+                    s.toggle_selected();
+                }
+            }
+            Action::SettingsSave => {
+                if let Some(ref settings) = self.state.settings_state {
+                    settings.apply_to_config(&mut self.config);
+                    if let Err(e) = self.config.save(&self.config_path) {
+                        tracing::error!("Failed to save config: {}", e);
+                    } else {
+                        tracing::info!("Config saved to {}", self.config_path.display());
+                    }
+                }
+                self.state.close_settings();
+            }
+            Action::SettingsClose => {
+                self.state.close_settings();
+            }
+            Action::RenameChat => {
+                if let Some(idx) = self.state.chat_list_state.selected() {
+                    if let Some(chat) = self.state.chats.get(idx) {
+                        let name = chat
+                            .display_name
+                            .as_ref()
+                            .unwrap_or(&chat.name)
+                            .clone();
+                        self.state.input_buffer = name;
+                        self.state.cursor_position = self.state.input_buffer.len();
+                        self.state.input_mode = InputMode::Renaming;
+                    }
+                }
+            }
+            Action::ConfirmRename => {
+                let new_name = self.state.take_input();
+                if !new_name.is_empty() {
+                    if let Some(idx) = self.state.chat_list_state.selected() {
+                        if let Some(chat) = self.state.chats.get_mut(idx) {
+                            chat.display_name = Some(new_name.clone());
+                            let _ = self.db.set_display_name(&chat.id, &new_name);
+                        }
+                    }
+                }
+                self.state.input_mode = InputMode::Normal;
+            }
+            Action::CancelRename => {
+                self.state.input_buffer.clear();
+                self.state.cursor_position = 0;
+                self.state.input_mode = InputMode::Normal;
             }
             Action::None => {}
         }

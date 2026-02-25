@@ -165,6 +165,7 @@ impl MessagingProvider for WhatsAppProvider {
 /// Handle a WhatsApp event and forward it to our provider event channel.
 fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::UnboundedSender<ProviderEvent>) {
     use whatsapp_rust::types::events::Event;
+    use whatsapp_rust::Jid;
 
     match event {
         Event::PairingQrCode { code, timeout } => {
@@ -209,11 +210,13 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
             ) {
                 let chat_id = jid_to_chat_id(&source.chat);
 
-                // Determine chat name: use push_name for incoming personal chats,
-                // extract phone number as fallback, skip name update for outgoing
-                let chat_name = if source.is_from_me {
-                    // For outgoing messages we don't know the recipient's name,
-                    // so use the phone number from the chat JID as a placeholder
+                // Determine chat name:
+                // - Groups: never use sender's push_name (that's a person, not the group)
+                // - 1:1 incoming: use push_name if available
+                // - Outgoing / fallback: use phone number from JID
+                let chat_name = if source.is_group {
+                    jid_to_display_name(&source.chat)
+                } else if source.is_from_me {
                     jid_to_display_name(&source.chat)
                 } else if !info.push_name.is_empty() {
                     info.push_name.clone()
@@ -226,6 +229,7 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
                     id: chat_id,
                     platform: Platform::WhatsApp,
                     name: chat_name,
+                    display_name: None,
                     last_message: Some(preview),
                     unread_count: if unified.is_outgoing { 0 } else { 1 },
                     is_group: source.is_group,
@@ -248,8 +252,57 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
                 });
             }
         }
-        Event::HistorySync(_) => {
-            tracing::debug!("History sync event received");
+        Event::HistorySync(sync) => {
+            tracing::info!(
+                "History sync: {} conversations, {} pushnames",
+                sync.conversations.len(),
+                sync.pushnames.len()
+            );
+
+            // Build pushname lookup for 1:1 chat name resolution
+            let pushname_map: std::collections::HashMap<&str, &str> = sync
+                .pushnames
+                .iter()
+                .filter_map(|pn| match (&pn.id, &pn.pushname) {
+                    (Some(id), Some(name)) if !name.is_empty() => Some((id.as_str(), name.as_str())),
+                    _ => None,
+                })
+                .collect();
+
+            let mut chats = Vec::new();
+            for conv in &sync.conversations {
+                let jid_str = &conv.id;
+                if let Ok(jid) = jid_str.parse::<Jid>() {
+                    let chat_id = jid_to_chat_id(&jid);
+                    let is_group = jid_str.contains("@g.us");
+
+                    let name = if is_group {
+                        conv.name
+                            .clone()
+                            .unwrap_or_else(|| jid_to_display_name(&jid))
+                    } else {
+                        pushname_map
+                            .get(jid_str.as_str())
+                            .map(|s| s.to_string())
+                            .or_else(|| conv.display_name.clone())
+                            .unwrap_or_else(|| jid_to_display_name(&jid))
+                    };
+
+                    chats.push(UnifiedChat {
+                        id: chat_id,
+                        platform: Platform::WhatsApp,
+                        name,
+                        display_name: None,
+                        last_message: None,
+                        unread_count: conv.unread_count.unwrap_or(0),
+                        is_group,
+                    });
+                }
+            }
+            if !chats.is_empty() {
+                tracing::info!("Synced {} WhatsApp chats", chats.len());
+                let _ = tx.send(ProviderEvent::ChatsUpdated(chats));
+            }
         }
         Event::OfflineSyncCompleted(_) => {
             tracing::info!("WhatsApp offline sync completed");

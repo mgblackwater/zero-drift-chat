@@ -62,6 +62,12 @@ impl Database {
             );
             ",
         )?;
+
+        // Migration: add display_name column if not exists
+        let _ = self
+            .conn
+            .execute("ALTER TABLE chats ADD COLUMN display_name TEXT", []);
+
         Ok(())
     }
 }

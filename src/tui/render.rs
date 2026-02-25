@@ -4,7 +4,7 @@ use ratatui::{
 };
 
 use super::app_state::AppState;
-use super::widgets::{chat_list, input_bar, message_view, qr_overlay, status_bar};
+use super::widgets::{chat_list, input_bar, message_view, qr_overlay, settings_overlay, status_bar};
 
 pub fn draw(f: &mut Frame, state: &mut AppState) {
     let outer = Layout::default()
@@ -69,5 +69,10 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     // Render QR code overlay on top if present
     if let Some(ref qr) = state.qr_code {
         qr_overlay::render_qr_overlay(f, qr);
+    }
+
+    // Render settings overlay on top if open
+    if let Some(ref settings) = state.settings_state {
+        settings_overlay::render_settings_overlay(f, settings);
     }
 }

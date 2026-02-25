@@ -18,6 +18,8 @@ pub fn render_input_bar(
     let (mode_tag, border_color) = match mode {
         InputMode::Normal => ("NORMAL", Color::DarkGray),
         InputMode::Editing => ("INSERT", Color::Yellow),
+        InputMode::Settings => ("SETTINGS", Color::Cyan),
+        InputMode::Renaming => ("RENAME", Color::Magenta),
     };
 
     let line = Line::from(vec![
@@ -36,7 +38,7 @@ pub fn render_input_bar(
     f.render_widget(paragraph, area);
 
     // Show cursor when editing
-    if mode == InputMode::Editing {
+    if mode == InputMode::Editing || mode == InputMode::Renaming {
         let prefix_len = mode_tag.len() + 3; // "[MODE] "
         let byte_pos = cursor_position;
         let char_offset = input[..byte_pos].chars().count();

@@ -26,10 +26,11 @@ pub fn render_chat_list(
                 String::new()
             };
 
+            let name = chat.display_name.as_deref().unwrap_or(&chat.name);
             let line = Line::from(vec![
                 Span::styled(tag, Style::default().fg(Color::DarkGray)),
                 Span::raw(" "),
-                Span::styled(&chat.name, Style::default().fg(Color::White)),
+                Span::styled(name, Style::default().fg(Color::White)),
                 Span::styled(unread, Style::default().fg(Color::Yellow)),
             ]);
 

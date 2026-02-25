@@ -1,11 +1,121 @@
 use ratatui::widgets::ListState;
 
+use crate::config::AppConfig;
 use crate::core::types::{UnifiedChat, UnifiedMessage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
     Editing,
+    Settings,
+    Renaming,
+}
+
+// --- Settings overlay types ---
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsKey {
+    MockEnabled,
+    WhatsAppEnabled,
+    LogLevel,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingsValue {
+    Bool(bool),
+    Choice(Vec<String>, usize),
+}
+
+#[derive(Debug, Clone)]
+pub struct SettingsItem {
+    pub key: SettingsKey,
+    pub label: String,
+    pub value: SettingsValue,
+}
+
+pub struct SettingsState {
+    pub items: Vec<SettingsItem>,
+    pub selected: usize,
+    pub dirty: bool,
+}
+
+impl SettingsState {
+    pub fn from_config(config: &AppConfig) -> Self {
+        let log_choices = vec![
+            "trace".to_string(),
+            "debug".to_string(),
+            "info".to_string(),
+            "warn".to_string(),
+            "error".to_string(),
+        ];
+        let log_idx = log_choices
+            .iter()
+            .position(|l| l == &config.general.log_level)
+            .unwrap_or(2);
+
+        Self {
+            items: vec![
+                SettingsItem {
+                    key: SettingsKey::MockEnabled,
+                    label: "Mock Provider".to_string(),
+                    value: SettingsValue::Bool(config.mock_provider.enabled),
+                },
+                SettingsItem {
+                    key: SettingsKey::WhatsAppEnabled,
+                    label: "WhatsApp".to_string(),
+                    value: SettingsValue::Bool(config.whatsapp.enabled),
+                },
+                SettingsItem {
+                    key: SettingsKey::LogLevel,
+                    label: "Log Level".to_string(),
+                    value: SettingsValue::Choice(log_choices, log_idx),
+                },
+            ],
+            selected: 0,
+            dirty: false,
+        }
+    }
+
+    pub fn select_next(&mut self) {
+        if self.selected < self.items.len() - 1 {
+            self.selected += 1;
+        }
+    }
+
+    pub fn select_prev(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+
+    pub fn toggle_selected(&mut self) {
+        if let Some(item) = self.items.get_mut(self.selected) {
+            match &mut item.value {
+                SettingsValue::Bool(ref mut b) => *b = !*b,
+                SettingsValue::Choice(choices, ref mut idx) => {
+                    *idx = (*idx + 1) % choices.len();
+                }
+            }
+            self.dirty = true;
+        }
+    }
+
+    pub fn apply_to_config(&self, config: &mut AppConfig) {
+        for item in &self.items {
+            match (&item.key, &item.value) {
+                (SettingsKey::MockEnabled, SettingsValue::Bool(v)) => {
+                    config.mock_provider.enabled = *v;
+                }
+                (SettingsKey::WhatsAppEnabled, SettingsValue::Bool(v)) => {
+                    config.whatsapp.enabled = *v;
+                }
+                (SettingsKey::LogLevel, SettingsValue::Choice(choices, idx)) => {
+                    config.general.log_level = choices[*idx].clone();
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +136,7 @@ pub struct AppState {
     pub should_quit: bool,
     pub qr_code: Option<String>,
     pub whatsapp_connected: bool,
+    pub settings_state: Option<SettingsState>,
 }
 
 impl AppState {
@@ -45,6 +156,7 @@ impl AppState {
             should_quit: false,
             qr_code: None,
             whatsapp_connected: false,
+            settings_state: None,
         }
     }
 
@@ -135,5 +247,15 @@ impl AppState {
 
     pub fn scroll_down(&mut self) {
         self.scroll_offset = self.scroll_offset.saturating_sub(3);
+    }
+
+    pub fn open_settings(&mut self, config: &AppConfig) {
+        self.settings_state = Some(SettingsState::from_config(config));
+        self.input_mode = InputMode::Settings;
+    }
+
+    pub fn close_settings(&mut self) {
+        self.settings_state = None;
+        self.input_mode = InputMode::Normal;
     }
 }

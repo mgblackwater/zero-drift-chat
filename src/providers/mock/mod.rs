@@ -74,6 +74,7 @@ impl MockProvider {
                 id: format!("mock-chat-{}", i),
                 platform: Platform::Mock,
                 name: CHAT_NAMES[i].to_string(),
+                display_name: None,
                 last_message: None,
                 unread_count: 0,
                 is_group: i == 2 || i == 4, // "Team Standup" and "Charlie & Dave"

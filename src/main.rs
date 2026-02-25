@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
     let db = Database::open(db_path.to_str().unwrap_or("zero-drift.db"))?;
 
     // Run app
-    let mut app = App::new(config, db);
+    let mut app = App::new(config, db, config_path);
     app.run().await?;
 
     tracing::info!("zero-drift-chat exited cleanly");

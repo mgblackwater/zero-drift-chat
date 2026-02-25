@@ -10,8 +10,10 @@ use crate::tui::app_state::InputMode;
 
 pub fn render_status_bar(f: &mut Frame, area: Rect, mode: InputMode, whatsapp_connected: bool) {
     let hints = match mode {
-        InputMode::Normal => "q:Quit | Tab:Switch | j/k:Navigate | i:Type | PgUp/PgDn:Scroll",
+        InputMode::Normal => "q:Quit | Tab:Switch | j/k:Navigate | i:Type | r:Rename | s:Settings",
         InputMode::Editing => "Esc:Normal | Enter:Send | Type your message",
+        InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
+        InputMode::Renaming => "Enter:Confirm | Esc:Cancel | Type new name",
     };
 
     let mut spans = vec![
