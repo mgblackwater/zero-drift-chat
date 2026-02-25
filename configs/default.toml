@@ -8,6 +8,10 @@ render_rate_ms = 33
 chat_list_width_percent = 30
 
 [mock_provider]
-enabled = true
+enabled = false
 chat_count = 5
 message_interval_secs = 3
+
+[whatsapp]
+enabled = true
+# phone_number = "+1234567890"

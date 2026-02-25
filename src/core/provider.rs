@@ -13,6 +13,7 @@ pub enum ProviderEvent {
     },
     ChatsUpdated(Vec<UnifiedChat>),
     AuthStatusChanged(Platform, AuthStatus),
+    AuthQrCode(String),
 }
 
 #[async_trait]

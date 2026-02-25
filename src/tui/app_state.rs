@@ -24,6 +24,8 @@ pub struct AppState {
     pub cursor_position: usize,
     pub scroll_offset: u16,
     pub should_quit: bool,
+    pub qr_code: Option<String>,
+    pub whatsapp_connected: bool,
 }
 
 impl AppState {
@@ -41,6 +43,8 @@ impl AppState {
             cursor_position: 0,
             scroll_offset: 0,
             should_quit: false,
+            qr_code: None,
+            whatsapp_connected: false,
         }
     }
 

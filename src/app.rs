@@ -9,9 +9,10 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::config::AppConfig;
 use crate::core::provider::ProviderEvent;
-use crate::core::types::{MessageContent, Platform};
+use crate::core::types::{AuthStatus, MessageContent, Platform};
 use crate::core::MessageRouter;
 use crate::providers::mock::MockProvider;
+use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::Database;
 use crate::tui::app_state::AppState;
 use crate::tui::event::{AppEvent, EventHandler};
@@ -43,6 +44,15 @@ impl App {
                 self.config.mock_provider.message_interval_secs,
             );
             self.router.register_provider(Box::new(mock));
+        }
+
+        if self.config.whatsapp.enabled {
+            let session_path = format!(
+                "{}/whatsapp-session.db",
+                self.config.general.data_dir
+            );
+            let wa = WhatsAppProvider::new(session_path);
+            self.router.register_provider(Box::new(wa));
         }
 
         // Start all providers
@@ -117,7 +127,10 @@ impl App {
 
     fn handle_tick(&mut self) {
         let events = self.router.poll_events();
-        for event in events {
+
+        // Cap events per tick to avoid blocking the render loop
+        let max_events = 50;
+        for event in events.into_iter().take(max_events) {
             match event {
                 ProviderEvent::NewMessage(msg) => {
                     // Persist to DB
@@ -167,20 +180,37 @@ impl App {
                     }
                 }
                 ProviderEvent::ChatsUpdated(chats) => {
-                    // Persist and merge
+                    // Persist and merge — but skip expensive DB reads
                     for chat in &chats {
                         if let Err(e) = self.db.upsert_chat(chat) {
                             tracing::error!("Failed to upsert chat: {}", e);
                         }
                     }
 
-                    // If we had no chats, use these
-                    if self.state.chats.is_empty() {
-                        self.state.chats = chats;
+                    // Merge: add new chats, update existing ones
+                    for chat in chats {
+                        if let Some(existing) = self
+                            .state
+                            .chats
+                            .iter_mut()
+                            .find(|c| c.id == chat.id)
+                        {
+                            if chat.last_message.is_some() {
+                                existing.last_message = chat.last_message;
+                            }
+                            // Only update name if the new name looks like a real name
+                            // (not a raw phone number) or if existing is still a number
+                            let existing_is_numeric = existing.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                            let new_is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                            if !new_is_numeric || existing_is_numeric {
+                                existing.name = chat.name;
+                            }
+                        } else {
+                            self.state.chats.push(chat);
+                        }
                     }
-
-                    // Load messages for the first selected chat
-                    self.load_selected_chat_messages();
+                    // Note: no load_selected_chat_messages() here —
+                    // messages arrive via NewMessage events instead
                 }
                 ProviderEvent::MessageStatusUpdate { message_id, status } => {
                     let _ = self.db.update_message_status(&message_id, status);
@@ -195,6 +225,22 @@ impl App {
                 }
                 ProviderEvent::AuthStatusChanged(platform, status) => {
                     tracing::info!("Auth status changed for {:?}: {:?}", platform, status);
+                    if platform == Platform::WhatsApp {
+                        match status {
+                            AuthStatus::Authenticated => {
+                                self.state.whatsapp_connected = true;
+                                self.state.qr_code = None;
+                            }
+                            AuthStatus::NotAuthenticated | AuthStatus::Failed => {
+                                self.state.whatsapp_connected = false;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                ProviderEvent::AuthQrCode(code) => {
+                    tracing::info!("QR code received for WhatsApp pairing");
+                    self.state.qr_code = Some(code);
                 }
             }
         }
@@ -229,13 +275,22 @@ impl App {
                 let input = self.state.take_input();
                 if !input.is_empty() {
                     if let Some(chat_id) = self.state.selected_chat_id().map(|s| s.to_string()) {
-                        if let Some(provider) = self.router.get_provider_mut(Platform::Mock) {
+                        // Determine which provider owns this chat
+                        let platform = self
+                            .state
+                            .chats
+                            .iter()
+                            .find(|c| c.id == chat_id)
+                            .map(|c| c.platform)
+                            .unwrap_or(Platform::Mock);
+
+                        if let Some(provider) = self.router.get_provider_mut(platform) {
                             match provider
                                 .send_message(&chat_id, MessageContent::Text(input))
                                 .await
                             {
                                 Ok(_) => {
-                                    tracing::debug!("Message sent");
+                                    tracing::debug!("Message sent via {:?}", platform);
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to send message: {}", e);

@@ -11,6 +11,8 @@ pub struct AppConfig {
     pub tui: TuiConfig,
     #[serde(default)]
     pub mock_provider: MockProviderConfig,
+    #[serde(default)]
+    pub whatsapp: WhatsAppConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,23 @@ pub struct MockProviderConfig {
     pub chat_count: usize,
     #[serde(default = "default_message_interval")]
     pub message_interval_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhatsAppConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub phone_number: Option<String>,
+}
+
+impl Default for WhatsAppConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            phone_number: None,
+        }
+    }
 }
 
 fn default_data_dir() -> String {
@@ -81,6 +100,7 @@ impl Default for AppConfig {
             general: GeneralConfig::default(),
             tui: TuiConfig::default(),
             mock_provider: MockProviderConfig::default(),
+            whatsapp: WhatsAppConfig::default(),
         }
     }
 }
