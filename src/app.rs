@@ -79,6 +79,9 @@ impl App {
             }
         }
 
+        // Load messages for the initially selected chat
+        self.load_selected_chat_messages();
+
         // Set up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();

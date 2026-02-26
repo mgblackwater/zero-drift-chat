@@ -83,30 +83,42 @@ impl MockProvider {
     }
 
     fn generate_seed_messages(chats: &[UnifiedChat]) -> Vec<UnifiedMessage> {
-        let mut rng = rand::thread_rng();
         let mut all_messages = Vec::new();
 
-        for chat in chats {
-            let msg_count = rng.gen_range(10..=20);
-            let base_time = Utc::now() - chrono::Duration::hours(24);
+        // Use deterministic seed data so messages are stable across restarts.
+        // Each chat gets a fixed set of messages with stable IDs.
+        let seed_convos: &[&[usize]] = &[
+            &[0, 3, 6, 1, 9, 14, 4],   // chat 0
+            &[2, 7, 11, 5, 16, 8],      // chat 1
+            &[12, 0, 17, 3, 14, 10, 1], // chat 2
+            &[4, 8, 15, 2, 19, 6],      // chat 3
+            &[13, 5, 9, 18, 7, 11, 3],  // chat 4
+            &[1, 10, 16, 4, 12, 8],     // chat 5
+            &[6, 2, 15, 0, 18, 9],      // chat 6
+            &[11, 7, 13, 5, 17, 3, 19], // chat 7
+        ];
 
-            for j in 0..msg_count {
-                let is_outgoing = rng.gen_bool(0.3);
+        let base_time = Utc::now() - chrono::Duration::hours(24);
+
+        for (chat_idx, chat) in chats.iter().enumerate() {
+            let msg_indices = seed_convos.get(chat_idx).copied().unwrap_or(&[0, 1, 2]);
+
+            for (j, &content_idx) in msg_indices.iter().enumerate() {
+                let is_outgoing = j % 3 == 0; // deterministic pattern
                 let sender = if is_outgoing {
                     "You".to_string()
                 } else {
                     chat.name.clone()
                 };
-                let content_idx = rng.gen_range(0..MOCK_MESSAGES.len());
                 let timestamp =
-                    base_time + chrono::Duration::minutes(j as i64 * rng.gen_range(5..30));
+                    base_time + chrono::Duration::minutes(j as i64 * 15);
 
                 all_messages.push(UnifiedMessage {
-                    id: Uuid::new_v4().to_string(),
+                    id: format!("mock-seed-{}-{}", chat_idx, j),
                     chat_id: chat.id.clone(),
                     platform: Platform::Mock,
                     sender,
-                    content: MessageContent::Text(MOCK_MESSAGES[content_idx].to_string()),
+                    content: MessageContent::Text(MOCK_MESSAGES[content_idx % MOCK_MESSAGES.len()].to_string()),
                     timestamp,
                     status: MessageStatus::Read,
                     is_outgoing,
