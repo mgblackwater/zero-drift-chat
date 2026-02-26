@@ -136,6 +136,7 @@ pub struct AppState {
     pub should_quit: bool,
     pub qr_code: Option<String>,
     pub whatsapp_connected: bool,
+    pub mock_enabled: bool,
     pub settings_state: Option<SettingsState>,
 }
 
@@ -156,6 +157,7 @@ impl AppState {
             should_quit: false,
             qr_code: None,
             whatsapp_connected: false,
+            mock_enabled: false,
             settings_state: None,
         }
     }

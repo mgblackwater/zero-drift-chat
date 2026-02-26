@@ -8,7 +8,13 @@ use ratatui::{
 
 use crate::tui::app_state::InputMode;
 
-pub fn render_status_bar(f: &mut Frame, area: Rect, mode: InputMode, whatsapp_connected: bool) {
+pub fn render_status_bar(
+    f: &mut Frame,
+    area: Rect,
+    mode: InputMode,
+    mock_enabled: bool,
+    whatsapp_connected: bool,
+) {
     let hints = match mode {
         InputMode::Normal => "q:Quit | Tab:Switch | j/k:Navigate | i:Type | r:Rename | s:Settings",
         InputMode::Editing => "Esc:Normal | Enter:Send | Type your message",
@@ -16,10 +22,13 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, mode: InputMode, whatsapp_co
         InputMode::Renaming => "Enter:Confirm | Esc:Cancel | Type new name",
     };
 
-    let mut spans = vec![
-        Span::styled(" ● ", Style::default().fg(Color::Green)),
-        Span::styled("Mock", Style::default().fg(Color::DarkGray)),
-    ];
+    let mut spans = Vec::new();
+
+    if mock_enabled {
+        spans.push(Span::styled(" ● ", Style::default().fg(Color::Green)));
+        spans.push(Span::styled("Mock", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+    }
 
     // WhatsApp status indicator
     let wa_color = if whatsapp_connected {
@@ -27,7 +36,6 @@ pub fn render_status_bar(f: &mut Frame, area: Rect, mode: InputMode, whatsapp_co
     } else {
         Color::Red
     };
-    spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
     spans.push(Span::styled(" ● ", Style::default().fg(wa_color)));
     spans.push(Span::styled("WA", Style::default().fg(Color::DarkGray)));
 

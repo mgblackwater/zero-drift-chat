@@ -61,8 +61,19 @@ impl App {
         // Start all providers
         self.router.start_all().await?;
 
-        // Load persisted chats from DB
+        // Track which providers are enabled for status bar
+        self.state.mock_enabled = self.config.mock_provider.enabled;
+
+        // Load persisted chats from DB, filtering out disabled providers
         if let Ok(chats) = self.db.get_all_chats() {
+            let chats: Vec<_> = chats
+                .into_iter()
+                .filter(|c| match c.platform {
+                    Platform::Mock => self.config.mock_provider.enabled,
+                    Platform::WhatsApp => self.config.whatsapp.enabled,
+                    _ => true,
+                })
+                .collect();
             if !chats.is_empty() {
                 self.state.chats = chats;
             }
@@ -178,8 +189,23 @@ impl App {
 
                     // Add to current view if it's the selected chat
                     if is_current_chat {
-                        self.state.messages.push(msg);
+                        self.state.messages.push(msg.clone());
                         self.state.scroll_offset = 0; // auto-scroll to bottom
+                    }
+
+                    // Move chat to top of list (like WhatsApp)
+                    if let Some(pos) = self.state.chats.iter().position(|c| c.id == msg.chat_id) {
+                        if pos > 0 {
+                            let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
+                            let chat = self.state.chats.remove(pos);
+                            self.state.chats.insert(0, chat);
+                            // Keep selection on the same chat
+                            if let Some(id) = selected_id {
+                                if let Some(new_pos) = self.state.chats.iter().position(|c| c.id == id) {
+                                    self.state.chat_list_state.select(Some(new_pos));
+                                }
+                            }
+                        }
                     }
                 }
                 ProviderEvent::ChatsUpdated(chats) => {
