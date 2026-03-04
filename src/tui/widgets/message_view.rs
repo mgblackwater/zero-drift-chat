@@ -1,6 +1,5 @@
 use chrono::Local;
 use ratatui::{
-    buffer::Buffer,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -52,49 +51,6 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
     result
 }
 
-/// After rendering the Paragraph, scan the buffer for contiguous runs of Color::LightBlue cells
-/// (which are URL spans) and inject OSC 8 hyperlink escape sequences so that Windows Terminal
-/// treats them as Ctrl+Clickable links.
-fn inject_osc8_for_urls(buffer: &mut Buffer, area: Rect) {
-    for row in area.top()..area.bottom() {
-        let mut col = area.left();
-        while col < area.right() {
-            if buffer[(col, row)].fg != Color::LightBlue {
-                col += 1;
-                continue;
-            }
-            // Collect full URL text from the contiguous blue run
-            let run_start = col;
-            let mut url = String::new();
-            while col < area.right() && buffer[(col, row)].fg == Color::LightBlue {
-                url.push_str(buffer[(col, row)].symbol());
-                col += 1;
-            }
-            let run_end = col; // exclusive
-
-            // Only inject OSC 8 for complete URLs (starts with http)
-            if !url.starts_with("http://") && !url.starts_with("https://") {
-                continue;
-            }
-
-            if run_end == run_start + 1 {
-                // Single-cell URL (edge case)
-                let sym = buffer[(run_start, row)].symbol().to_string();
-                buffer[(run_start, row)]
-                    .set_symbol(&format!("\x1B]8;;{url}\x07{sym}\x1B]8;;\x07"));
-            } else {
-                // Prepend OSC 8 start to the first cell
-                let first_sym = buffer[(run_start, row)].symbol().to_string();
-                buffer[(run_start, row)]
-                    .set_symbol(&format!("\x1B]8;;{url}\x07{first_sym}"));
-                // Append OSC 8 end to the last cell
-                let last_col = run_end - 1;
-                let last_sym = buffer[(last_col, row)].symbol().to_string();
-                buffer[(last_col, row)].set_symbol(&format!("{last_sym}\x1B]8;;\x07"));
-            }
-        }
-    }
-}
 
 pub fn render_message_view(
     f: &mut Frame,
@@ -206,15 +162,12 @@ pub fn render_message_view(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 
-    let inner_area = block.inner(area);
-
     let paragraph = Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: false })
         .scroll((effective_scroll, 0));
 
     f.render_widget(paragraph, area);
-    inject_osc8_for_urls(f.buffer_mut(), inner_area);
 }
 
 #[cfg(test)]

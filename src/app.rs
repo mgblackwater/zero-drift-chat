@@ -20,6 +20,7 @@ use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SettingsKey, Sett
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
+use crate::tui;
 
 pub struct App {
     state: AppState,
@@ -132,7 +133,8 @@ impl App {
             let event = events.next().await;
             match event {
                 Some(AppEvent::Render) => {
-                    terminal.draw(|f| render::draw(f, &mut self.state))?;
+                    let completed = terminal.draw(|f| render::draw(f, &mut self.state))?;
+                    tui::osc8::inject_osc8_hyperlinks(completed.buffer)?;
                 }
                 Some(AppEvent::Tick) => {
                     self.handle_tick();
