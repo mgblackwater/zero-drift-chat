@@ -65,6 +65,7 @@ impl Database {
                     last_message,
                     unread_count,
                     is_group: is_group != 0,
+                    is_pinned: false,
                 }
             })
             .collect();

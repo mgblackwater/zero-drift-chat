@@ -68,6 +68,11 @@ impl Database {
             .conn
             .execute("ALTER TABLE chats ADD COLUMN display_name TEXT", []);
 
+        // Migration: add pinned column if not exists
+        let _ = self
+            .conn
+            .execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0", []);
+
         Ok(())
     }
 }
