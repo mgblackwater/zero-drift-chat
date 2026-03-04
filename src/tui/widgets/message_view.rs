@@ -34,7 +34,16 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
         let url_end = url_text
             .find(|c: char| c.is_whitespace())
             .unwrap_or(url_text.len());
-        result.push((&url_text[..url_end], true));
+        // Strip trailing sentence punctuation that is not part of the URL
+        let raw_url = &url_text[..url_end];
+        let stripped_len = raw_url
+            .trim_end_matches(|c| matches!(c, '.' | ',' | ')' | ']' | '>' | '!' | '?'))
+            .len();
+        let (url_part, punct_part) = raw_url.split_at(stripped_len);
+        result.push((url_part, true));
+        if !punct_part.is_empty() {
+            result.push((punct_part, false));
+        }
         remaining = &url_text[url_end..];
     }
     result
@@ -91,26 +100,25 @@ pub fn render_message_view(
             .add_modifier(Modifier::UNDERLINED);
 
         for text_line in msg.content.as_text().split('\n') {
-            let segments = split_line_with_urls(text_line);
-            if segments.iter().all(|(_, is_url)| !is_url) {
-                // Fast path: no URLs — keep existing single-span behaviour
+            if !text_line.contains("http://") && !text_line.contains("https://") {
+                // Fast path: no URL prefix — single span, no allocation
                 lines.push(Line::from(Span::styled(
                     text_line.to_string(),
                     Style::default().fg(msg_color),
                 )));
-            } else {
-                let spans: Vec<Span> = segments
-                    .into_iter()
-                    .map(|(seg, is_url)| {
-                        if is_url {
-                            Span::styled(seg.to_string(), url_style)
-                        } else {
-                            Span::styled(seg.to_string(), Style::default().fg(msg_color))
-                        }
-                    })
-                    .collect();
-                lines.push(Line::from(spans));
+                continue;
             }
+            let spans: Vec<Span> = split_line_with_urls(text_line)
+                .into_iter()
+                .map(|(seg, is_url)| {
+                    if is_url {
+                        Span::styled(seg.to_string(), url_style)
+                    } else {
+                        Span::styled(seg.to_string(), Style::default().fg(msg_color))
+                    }
+                })
+                .collect();
+            lines.push(Line::from(spans));
         }
         lines.push(Line::from("")); // spacing
     }
