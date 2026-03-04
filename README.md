@@ -8,7 +8,17 @@ See [FEATURES.md](FEATURES.md) for the full feature list.
 
 ## Install
 
-### From release (no Rust needed)
+### Download a pre-built binary
+
+Grab the latest build for your platform from the [Releases page](https://github.com/mgblackwater/zero-drift-chat/releases).
+
+| Platform | Asset |
+|----------|-------|
+| Windows | `zero-drift-chat-windows-x86_64.exe` |
+| macOS (Apple Silicon) | `zero-drift-chat-macos-aarch64` or `zero-drift-chat-macos-aarch64.dmg` |
+| Linux | `zero-drift-chat-linux-x86_64` |
+
+### Install via script (no Rust needed)
 
 **macOS / Linux / WSL:**
 ```bash
