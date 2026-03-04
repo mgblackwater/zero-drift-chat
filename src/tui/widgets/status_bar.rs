@@ -20,7 +20,7 @@ pub fn render_status_bar(
         InputMode::Normal => "q:Quit | i:Insert | s:Settings | r:Rename | x:Menu | Tab:Switch",
         InputMode::Editing => {
             if enter_sends {
-                "Esc:Normal | Enter:Send | Shift+Enter:Newline | Ctrl+S:Send | Ctrl+U:Clear"
+                "Esc:Normal | Enter:Send | Shift+Enter/Ctrl+J:Newline | Ctrl+S:Send | Ctrl+U:Clear"
             } else {
                 "Esc:Normal | Enter:Newline | Shift+Enter/Ctrl+S:Send | Ctrl+U:Clear"
             }

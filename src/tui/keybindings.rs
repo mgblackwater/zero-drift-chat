@@ -75,6 +75,10 @@ fn map_editing_mode(key: KeyEvent, enter_sends: bool) -> Action {
         (KeyCode::Enter, m)
             if !enter_sends && m.contains(KeyModifiers::ALT) => Action::SubmitMessage,
 
+        // Ctrl+J: WSL-friendly newline insert (Shift+Enter not reliably transmitted in WSL)
+        (KeyCode::Char('j'), m) if m.contains(KeyModifiers::CONTROL) => {
+            Action::InputKey(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+        }
         // Ctrl+S always submits regardless of mode
         (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => Action::SubmitMessage,
         // Ctrl+U always clears
