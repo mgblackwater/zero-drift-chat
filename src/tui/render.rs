@@ -65,7 +65,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         state.input_mode,
     );
 
-    status_bar::render_status_bar(f, status_area, state.input_mode, state.mock_enabled, state.whatsapp_connected);
+    status_bar::render_status_bar(f, status_area, state.input_mode, state.enter_sends, state.mock_enabled, state.whatsapp_connected);
 
     // Render QR code overlay on top if present
     if let Some(ref qr) = state.qr_code {
