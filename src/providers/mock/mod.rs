@@ -78,6 +78,7 @@ impl MockProvider {
                 last_message: None,
                 unread_count: 0,
                 is_group: i == 2 || i == 4, // "Team Standup" and "Charlie & Dave"
+                is_pinned: false,
             })
             .collect()
     }

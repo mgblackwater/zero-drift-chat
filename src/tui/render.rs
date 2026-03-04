@@ -3,8 +3,8 @@ use ratatui::{
     Frame,
 };
 
-use super::app_state::AppState;
-use super::widgets::{chat_list, input_bar, message_view, qr_overlay, settings_overlay, status_bar};
+use super::app_state::{AppState, InputMode};
+use super::widgets::{self, chat_list, input_bar, message_view, qr_overlay, settings_overlay, status_bar};
 
 pub fn draw(f: &mut Frame, state: &mut AppState) {
     let outer = Layout::default()
@@ -65,7 +65,14 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         state.input_mode,
     );
 
-    status_bar::render_status_bar(f, status_area, state.input_mode, state.mock_enabled, state.whatsapp_connected);
+    status_bar::render_status_bar(
+        f,
+        status_area,
+        state.input_mode,
+        state.enter_sends,
+        state.mock_enabled,
+        state.whatsapp_connected,
+    );
 
     // Render QR code overlay on top if present
     if let Some(ref qr) = state.qr_code {
@@ -75,5 +82,12 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     // Render settings overlay on top if open
     if let Some(ref settings) = state.settings_state {
         settings_overlay::render_settings_overlay(f, settings);
+    }
+
+    // Render chat context menu popup on top if active
+    if state.input_mode == InputMode::ChatMenu {
+        if let Some(ref menu_state) = state.chat_menu_state {
+            widgets::chat_menu::render_chat_menu(f, chat_list_area, menu_state);
+        }
     }
 }

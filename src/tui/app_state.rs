@@ -10,6 +10,7 @@ pub enum InputMode {
     Editing,
     Settings,
     Renaming,
+    ChatMenu,
 }
 
 // --- Settings overlay types ---
@@ -19,6 +20,7 @@ pub enum SettingsKey {
     MockEnabled,
     WhatsAppEnabled,
     LogLevel,
+    EnterSends,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,7 +43,7 @@ pub struct SettingsState {
 }
 
 impl SettingsState {
-    pub fn from_config(config: &AppConfig) -> Self {
+    pub fn from_config(config: &AppConfig, enter_sends: bool) -> Self {
         let log_choices = vec![
             "trace".to_string(),
             "debug".to_string(),
@@ -70,6 +72,11 @@ impl SettingsState {
                     key: SettingsKey::LogLevel,
                     label: "Log Level".to_string(),
                     value: SettingsValue::Choice(log_choices, log_idx),
+                },
+                SettingsItem {
+                    key: SettingsKey::EnterSends,
+                    label: "Enter to Send".to_string(),
+                    value: SettingsValue::Bool(enter_sends),
                 },
             ],
             selected: 0,
@@ -113,8 +120,58 @@ impl SettingsState {
                 (SettingsKey::LogLevel, SettingsValue::Choice(choices, idx)) => {
                     config.general.log_level = choices[*idx].clone();
                 }
+                (SettingsKey::EnterSends, _) => {
+                    // stored in SQLite preferences, not TOML config
+                }
                 _ => {}
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatMenuItem {
+    TogglePin,
+}
+
+impl ChatMenuItem {
+    pub fn label(&self, is_pinned: bool) -> &'static str {
+        match self {
+            ChatMenuItem::TogglePin => {
+                if is_pinned { "Unpin" } else { "Pin" }
+            }
+        }
+    }
+}
+
+pub struct ChatMenuState {
+    pub chat_id: String,
+    pub chat_name: String,
+    pub is_pinned: bool,
+    pub selected: usize,
+    pub items: Vec<ChatMenuItem>,
+}
+
+impl ChatMenuState {
+    pub fn new(chat_id: String, chat_name: String, is_pinned: bool) -> Self {
+        Self {
+            chat_id,
+            chat_name,
+            is_pinned,
+            selected: 0,
+            items: vec![ChatMenuItem::TogglePin],
+        }
+    }
+
+    pub fn select_next(&mut self) {
+        if self.selected < self.items.len() - 1 {
+            self.selected += 1;
+        }
+    }
+
+    pub fn select_prev(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
         }
     }
 }
@@ -138,6 +195,8 @@ pub struct AppState {
     pub whatsapp_connected: bool,
     pub mock_enabled: bool,
     pub settings_state: Option<SettingsState>,
+    pub chat_menu_state: Option<ChatMenuState>,
+    pub enter_sends: bool,
 }
 
 impl AppState {
@@ -158,6 +217,8 @@ impl AppState {
             whatsapp_connected: false,
             mock_enabled: false,
             settings_state: None,
+            chat_menu_state: None,
+            enter_sends: true,
         }
     }
 
@@ -193,7 +254,7 @@ impl AppState {
         let i = match self.chat_list_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.chats.len() - 1
+                    0 // stay at top, no wrap
                 } else {
                     i - 1
                 }
@@ -234,13 +295,35 @@ impl AppState {
         self.scroll_offset = self.scroll_offset.saturating_sub(3);
     }
 
-    pub fn open_settings(&mut self, config: &AppConfig) {
-        self.settings_state = Some(SettingsState::from_config(config));
+    pub fn open_settings(&mut self, config: &AppConfig, enter_sends: bool) {
+        self.settings_state = Some(SettingsState::from_config(config, enter_sends));
         self.input_mode = InputMode::Settings;
     }
 
     pub fn close_settings(&mut self) {
         self.settings_state = None;
         self.input_mode = InputMode::Normal;
+    }
+
+    pub fn open_chat_menu(&mut self) {
+        if let Some(idx) = self.chat_list_state.selected() {
+            if let Some(chat) = self.chats.get(idx) {
+                self.chat_menu_state = Some(ChatMenuState::new(
+                    chat.id.clone(),
+                    chat.display_name.clone().unwrap_or_else(|| chat.name.clone()),
+                    chat.is_pinned,
+                ));
+                self.input_mode = InputMode::ChatMenu;
+            }
+        }
+    }
+
+    pub fn close_chat_menu(&mut self) {
+        self.chat_menu_state = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn has_unread(&self) -> bool {
+        self.chats.iter().any(|c| c.unread_count > 0)
     }
 }

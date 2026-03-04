@@ -6,6 +6,7 @@ impl Database {
     pub fn upsert_chat(&self, chat: &UnifiedChat) -> Result<()> {
         let platform_str = format!("{:?}", chat.platform);
         // Use INSERT ON CONFLICT to preserve user-set display_name
+        // Note: pinned column is intentionally excluded — managed via set_chat_pinned()
         self.conn.execute(
             "INSERT INTO chats (id, platform, name, last_message, unread_count, is_group, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
@@ -30,8 +31,8 @@ impl Database {
 
     pub fn get_all_chats(&self) -> Result<Vec<UnifiedChat>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, platform, name, last_message, unread_count, is_group, display_name
-             FROM chats ORDER BY updated_at DESC",
+            "SELECT id, platform, name, last_message, unread_count, is_group, display_name, pinned
+             FROM chats ORDER BY pinned DESC, updated_at DESC",
         )?;
 
         let chats = stmt
@@ -43,14 +44,15 @@ impl Database {
                 let unread_count: u32 = row.get(4)?;
                 let is_group: i32 = row.get(5)?;
                 let display_name: Option<String> = row.get(6)?;
+                let pinned: i32 = row.get(7)?;
 
-                Ok((id, platform_str, name, last_message, unread_count, is_group, display_name))
+                Ok((id, platform_str, name, last_message, unread_count, is_group, display_name, pinned))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let result = chats
             .into_iter()
-            .map(|(id, platform_str, name, last_message, unread_count, is_group, display_name)| {
+            .map(|(id, platform_str, name, last_message, unread_count, is_group, display_name, pinned)| {
                 let platform = match platform_str.as_str() {
                     "WhatsApp" => Platform::WhatsApp,
                     "Telegram" => Platform::Telegram,
@@ -65,11 +67,20 @@ impl Database {
                     last_message,
                     unread_count,
                     is_group: is_group != 0,
+                    is_pinned: pinned != 0,
                 }
             })
             .collect();
 
         Ok(result)
+    }
+
+    pub fn set_chat_pinned(&self, chat_id: &str, pinned: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE chats SET pinned = ?1 WHERE id = ?2",
+            rusqlite::params![pinned as i32, chat_id],
+        )?;
+        Ok(())
     }
 
     pub fn update_unread_count(&self, chat_id: &str, count: u32) -> Result<()> {

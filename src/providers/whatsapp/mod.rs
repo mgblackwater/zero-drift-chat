@@ -267,6 +267,7 @@ fn handle_wa_event(
                     last_message: Some(preview),
                     unread_count: if unified.is_outgoing { 0 } else { 1 },
                     is_group: source.is_group,
+                    is_pinned: false,
                 };
 
                 let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));
@@ -339,6 +340,7 @@ fn handle_wa_event(
                         last_message: last_preview,
                         unread_count: conv.unread_count.unwrap_or(0),
                         is_group,
+                        is_pinned: false,
                     };
 
                     let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));

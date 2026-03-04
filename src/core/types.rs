@@ -87,4 +87,5 @@ pub struct UnifiedChat {
     pub last_message: Option<String>,
     pub unread_count: u32,
     pub is_group: bool,
+    pub is_pinned: bool,
 }

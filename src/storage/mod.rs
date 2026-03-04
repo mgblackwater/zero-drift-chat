@@ -2,6 +2,7 @@ pub mod db;
 mod addressbook;
 mod chats;
 mod messages;
+mod preferences;
 mod sessions;
 
 pub use addressbook::AddressBook;

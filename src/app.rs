@@ -2,9 +2,8 @@ use std::io;
 use std::path::PathBuf;
 
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -17,10 +16,11 @@ use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, InputMode};
+use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SettingsKey, SettingsValue};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
+use crate::tui;
 
 pub struct App {
     state: AppState,
@@ -44,6 +44,14 @@ impl App {
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
+        // Load enter_sends preference from DB (default true)
+        self.state.enter_sends = self.db
+            .get_preference("enter_sends")
+            .ok()
+            .flatten()
+            .map(|v| v == "true")
+            .unwrap_or(true);
+
         // Register providers
         if self.config.mock_provider.enabled {
             let mock = MockProvider::new(
@@ -96,10 +104,13 @@ impl App {
         // Load messages for the initially selected chat
         self.load_selected_chat_messages();
 
+        // Set initial terminal title
+        self.refresh_title();
+
         // Set up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
@@ -107,7 +118,7 @@ impl App {
         let original_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |panic_info| {
             let _ = disable_raw_mode();
-            let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+            let _ = execute!(io::stdout(), LeaveAlternateScreen);
             original_hook(panic_info);
         }));
 
@@ -122,13 +133,14 @@ impl App {
             let event = events.next().await;
             match event {
                 Some(AppEvent::Render) => {
-                    terminal.draw(|f| render::draw(f, &mut self.state))?;
+                    let completed = terminal.draw(|f| render::draw(f, &mut self.state))?;
+                    tui::osc8::inject_osc8_hyperlinks(completed.buffer)?;
                 }
                 Some(AppEvent::Tick) => {
                     self.handle_tick();
                 }
                 Some(AppEvent::Key(key)) => {
-                    let action = map_key(key, self.state.input_mode);
+                    let action = map_key(key, self.state.input_mode, self.state.enter_sends);
                     self.handle_action(action).await;
                     if self.state.should_quit {
                         break;
@@ -148,9 +160,9 @@ impl App {
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
+            LeaveAlternateScreen
         )?;
+        Self::update_title(false);   // restore clean title on exit
         terminal.show_cursor()?;
 
         Ok(())
@@ -191,6 +203,7 @@ impl App {
                             let _ = self
                                 .db
                                 .update_unread_count(&chat.id, chat.unread_count);
+                            self.refresh_title();
                         }
                     }
 
@@ -215,7 +228,9 @@ impl App {
                         if pos > 0 {
                             let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
                             let chat = self.state.chats.remove(pos);
-                            self.state.chats.insert(0, chat);
+                            // Insert after the last pinned chat so pinned chats stay at the top
+                            let insert_pos = self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0);
+                            self.state.chats.insert(insert_pos, chat);
                             // Keep selection on the same chat
                             if let Some(id) = selected_id {
                                 if let Some(new_pos) = self.state.chats.iter().position(|c| c.id == id) {
@@ -291,6 +306,7 @@ impl App {
                 ProviderEvent::SyncCompleted => {
                     tracing::info!("Sync completed, refreshing current chat");
                     self.load_selected_chat_messages();
+                    self.refresh_title();
                 }
             }
         }
@@ -309,12 +325,14 @@ impl App {
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
+                self.refresh_title();
             }
             Action::PrevChat => {
                 self.state.select_prev_chat();
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
+                self.refresh_title();
             }
             Action::EnterEditing => {
                 self.state.enter_editing();
@@ -364,7 +382,7 @@ impl App {
                 self.state.scroll_down();
             }
             Action::OpenSettings => {
-                self.state.open_settings(&self.config);
+                self.state.open_settings(&self.config, self.state.enter_sends);
             }
             Action::SettingsNext => {
                 if let Some(ref mut s) = self.state.settings_state {
@@ -388,6 +406,17 @@ impl App {
                         tracing::error!("Failed to save config: {}", e);
                     } else {
                         tracing::info!("Config saved to {}", self.config_path.display());
+                    }
+                }
+                // Save EnterSends to SQLite and apply live (no restart needed)
+                if let Some(ref settings) = self.state.settings_state {
+                    if let Some(item) = settings.items.iter().find(|i| i.key == SettingsKey::EnterSends) {
+                        if let SettingsValue::Bool(v) = item.value {
+                            if let Err(e) = self.db.set_preference("enter_sends", if v { "true" } else { "false" }) {
+                                tracing::error!("Failed to persist enter_sends preference: {}", e);
+                            }
+                            self.state.enter_sends = v;
+                        }
                     }
                 }
                 self.state.close_settings();
@@ -429,6 +458,49 @@ impl App {
             Action::CancelRename => {
                 self.state.input = TextArea::default();
                 self.state.input_mode = InputMode::Normal;
+            }
+            Action::OpenChatMenu => {
+                self.state.open_chat_menu();
+            }
+            Action::ChatMenuNext => {
+                if let Some(ref mut menu) = self.state.chat_menu_state {
+                    menu.select_next();
+                }
+            }
+            Action::ChatMenuPrev => {
+                if let Some(ref mut menu) = self.state.chat_menu_state {
+                    menu.select_prev();
+                }
+            }
+            Action::ChatMenuConfirm => {
+                if let Some(ref menu) = self.state.chat_menu_state {
+                    let selected_item = menu.items.get(menu.selected).cloned();
+                    let chat_id = menu.chat_id.clone();
+                    let new_pinned = !menu.is_pinned;
+
+                    if let Some(ChatMenuItem::TogglePin) = selected_item {
+                        // Enforce max 10 pinned chats
+                        if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
+                            self.state.close_chat_menu();
+                            return;
+                        }
+                        // Persist to DB
+                        let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
+                        // Update in-memory chat list
+                        if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                            chat.is_pinned = new_pinned;
+                        }
+                        // Re-sort: pinned chats first, preserve relative order otherwise
+                        self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
+                        // Select the chat that was just pinned/unpinned at its new position
+                        let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
+                        self.state.chat_list_state.select(Some(new_idx));
+                    }
+                }
+                self.state.close_chat_menu();
+            }
+            Action::ChatMenuClose => {
+                self.state.close_chat_menu();
             }
             Action::None => {}
         }
@@ -486,5 +558,14 @@ impl App {
                 }
             }
         }
+    }
+
+    fn refresh_title(&self) {
+        Self::update_title(self.state.has_unread());
+    }
+
+    fn update_title(has_unread: bool) {
+        let title = if has_unread { "● zero-drift-chat" } else { "zero-drift-chat" };
+        let _ = execute!(io::stdout(), SetTitle(title));
     }
 }
