@@ -3,14 +3,34 @@ name: Release
 on:
   push:
     branches: [master]
-    tags:
-      - 'v*'
 
 permissions:
   contents: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.compute.outputs.tag }}
+      cargo_version: ${{ steps.compute.outputs.cargo_version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version and tag
+        id: compute
+        run: |
+          cargo_version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          tag="v${cargo_version}-build.${{ github.run_number }}"
+          echo "cargo_version=${cargo_version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git tag ${{ steps.compute.outputs.tag }}
+          git push origin ${{ steps.compute.outputs.tag }}
+
   build:
+    needs: version
     strategy:
       matrix:
         include:
@@ -45,15 +65,28 @@ jobs:
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
 
-      - name: Upload artifact
+      - name: Create DMG
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dmg-staging
+          cp ${{ matrix.artifact }} dmg-staging/
+          hdiutil create -srcfolder dmg-staging -format UDZO zero-drift-chat-macos-aarch64.dmg
+
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
 
+      - name: Upload DMG artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zero-drift-chat-macos-aarch64.dmg
+          path: zero-drift-chat-macos-aarch64.dmg
+
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, build]
     runs-on: ubuntu-latest
 
     steps:
@@ -67,8 +100,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
           generate_release_notes: true
           files: |
             artifacts/zero-drift-chat-windows-x86_64.exe/zero-drift-chat-windows-x86_64.exe
             artifacts/zero-drift-chat-macos-aarch64/zero-drift-chat-macos-aarch64
+            artifacts/zero-drift-chat-macos-aarch64.dmg/zero-drift-chat-macos-aarch64.dmg
             artifacts/zero-drift-chat-linux-x86_64/zero-drift-chat-linux-x86_64
