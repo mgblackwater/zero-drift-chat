@@ -59,6 +59,8 @@ fn map_editing_mode(key: KeyEvent) -> Action {
         (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => Action::SubmitMessage,
         // Alt+Enter: fallback for macOS Terminal.app and other terminals
         (KeyCode::Enter, m) if m.contains(KeyModifiers::ALT) => Action::SubmitMessage,
+        // Ctrl+S: universal reliable fallback (works on all terminals including WSL)
+        (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => Action::SubmitMessage,
         // Ctrl+U: clear entire buffer (override tui-textarea default of undo)
         (KeyCode::Char('u'), m) if m.contains(KeyModifiers::CONTROL) => Action::ClearInput,
         // All other keys forwarded to TextArea

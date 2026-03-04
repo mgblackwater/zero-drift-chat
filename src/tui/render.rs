@@ -23,9 +23,11 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     let chat_list_area = body_layout[0];
     let message_area = body_layout[1];
 
+    // Input box grows with content: +2 for borders, clamped between 3 (1 line) and 8 (6 lines)
+    let input_height = (state.input.lines().len() as u16 + 2).clamp(3, 8);
     let message_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .constraints([Constraint::Min(1), Constraint::Length(input_height)])
         .split(message_area);
 
     let message_view_area = message_layout[0];

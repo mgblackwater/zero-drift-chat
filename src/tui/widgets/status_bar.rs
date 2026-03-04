@@ -17,7 +17,7 @@ pub fn render_status_bar(
 ) {
     let hints = match mode {
         InputMode::Normal => "q:Quit | Tab:Switch | j/k:Navigate | i:Type | r:Rename | s:Settings",
-        InputMode::Editing => "Esc:Normal | Enter:Newline | Shift+Enter/Alt+Enter:Send | Ctrl+U:Clear",
+        InputMode::Editing => "Esc:Normal | Enter:Newline | Shift+Enter/Alt+Enter/Ctrl+S:Send | Ctrl+U:Clear",
         InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
         InputMode::Renaming => "Enter:Confirm | Esc:Cancel | Type new name",
     };
