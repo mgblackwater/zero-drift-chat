@@ -243,7 +243,7 @@ impl AppState {
         let i = match self.chat_list_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.chats.len() - 1
+                    0 // stay at top, no wrap
                 } else {
                     i - 1
                 }

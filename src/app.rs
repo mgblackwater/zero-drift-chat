@@ -452,6 +452,11 @@ impl App {
                     let new_pinned = !menu.is_pinned;
 
                     if let Some(ChatMenuItem::TogglePin) = selected_item {
+                        // Enforce max 10 pinned chats
+                        if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
+                            self.state.close_chat_menu();
+                            return;
+                        }
                         // Persist to DB
                         let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
                         // Update in-memory chat list
