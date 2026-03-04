@@ -1,4 +1,5 @@
 use ratatui::widgets::ListState;
+use tui_textarea::TextArea;
 
 use crate::config::AppConfig;
 use crate::core::types::{UnifiedChat, UnifiedMessage};
@@ -130,8 +131,7 @@ pub struct AppState {
     pub chat_list_state: ListState,
     pub active_panel: ActivePanel,
     pub input_mode: InputMode,
-    pub input_buffer: String,
-    pub cursor_position: usize,
+    pub input: TextArea<'static>,
     pub scroll_offset: u16,
     pub should_quit: bool,
     pub qr_code: Option<String>,
@@ -151,8 +151,7 @@ impl AppState {
             chat_list_state,
             active_panel: ActivePanel::ChatList,
             input_mode: InputMode::Normal,
-            input_buffer: String::new(),
-            cursor_position: 0,
+            input: TextArea::default(),
             scroll_offset: 0,
             should_quit: false,
             qr_code: None,
@@ -221,26 +220,10 @@ impl AppState {
         self.input_mode = InputMode::Normal;
     }
 
-    pub fn push_char(&mut self, c: char) {
-        self.input_buffer.insert(self.cursor_position, c);
-        self.cursor_position += c.len_utf8();
-    }
-
-    pub fn delete_char(&mut self) {
-        if self.cursor_position > 0 {
-            let prev = self.input_buffer[..self.cursor_position]
-                .chars()
-                .last()
-                .map(|c| c.len_utf8())
-                .unwrap_or(0);
-            self.cursor_position -= prev;
-            self.input_buffer.remove(self.cursor_position);
-        }
-    }
-
     pub fn take_input(&mut self) -> String {
-        self.cursor_position = 0;
-        std::mem::take(&mut self.input_buffer)
+        let text = self.input.lines().join("\n");
+        self.input = TextArea::default();
+        text
     }
 
     pub fn scroll_up(&mut self) {
