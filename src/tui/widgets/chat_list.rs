@@ -27,7 +27,9 @@ pub fn render_chat_list(
             };
 
             let name = chat.display_name.as_deref().unwrap_or(&chat.name);
+            let pin_tag = if chat.is_pinned { "* " } else { "" };
             let line = Line::from(vec![
+                Span::styled(pin_tag, Style::default().fg(Color::Yellow)),
                 Span::styled(tag, Style::default().fg(Color::DarkGray)),
                 Span::raw(" "),
                 Span::styled(name, Style::default().fg(Color::White)),
