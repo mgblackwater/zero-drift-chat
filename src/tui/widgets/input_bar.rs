@@ -31,7 +31,7 @@ pub fn render_input_bar(
 
     if mode == InputMode::Editing || mode == InputMode::Renaming {
         // TextArea widget: handles cursor, horizontal scroll, multi-line display automatically
-        f.render_widget(textarea.widget(), inner_area);
+        f.render_widget(textarea, inner_area);
     } else {
         // Normal/Settings: render text only, no hardware cursor in the input box
         let text = textarea.lines().join("\n");
