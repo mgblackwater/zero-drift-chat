@@ -20,6 +20,7 @@ pub fn render_status_bar(
         InputMode::Editing => "Esc:Normal | Enter:Newline | Shift+Enter/Alt+Enter/Ctrl+S:Send | Ctrl+U:Clear",
         InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
         InputMode::Renaming => "Enter:Confirm | Esc:Cancel | Type new name",
+        InputMode::ChatMenu => "j/k:Navigate | Enter:Select | Esc:Close",
     };
 
     let mut spans = Vec::new();
