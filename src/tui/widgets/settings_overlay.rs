@@ -91,7 +91,7 @@ pub fn render_settings_overlay(f: &mut Frame, settings: &SettingsState) {
         Style::default().fg(Color::DarkGray),
     )));
     lines.push(Line::from(Span::styled(
-        "  (changes take effect on restart)",
+        "  (some changes may require a restart)",
         Style::default().fg(Color::DarkGray),
     )));
 

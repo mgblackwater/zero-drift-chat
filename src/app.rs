@@ -49,7 +49,7 @@ impl App {
             .get_preference("enter_sends")
             .ok()
             .flatten()
-            .map(|v| v != "false")
+            .map(|v| v == "true")
             .unwrap_or(true);
 
         // Register providers
@@ -404,7 +404,9 @@ impl App {
                 if let Some(ref settings) = self.state.settings_state {
                     if let Some(item) = settings.items.iter().find(|i| i.key == SettingsKey::EnterSends) {
                         if let SettingsValue::Bool(v) = item.value {
-                            let _ = self.db.set_preference("enter_sends", if v { "true" } else { "false" });
+                            if let Err(e) = self.db.set_preference("enter_sends", if v { "true" } else { "false" }) {
+                                tracing::error!("Failed to persist enter_sends preference: {}", e);
+                            }
                             self.state.enter_sends = v;
                         }
                     }
