@@ -322,4 +322,8 @@ impl AppState {
         self.chat_menu_state = None;
         self.input_mode = InputMode::Normal;
     }
+
+    pub fn has_unread(&self) -> bool {
+        self.chats.iter().any(|c| c.unread_count > 0)
+    }
 }

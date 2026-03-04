@@ -105,8 +105,7 @@ impl App {
         self.load_selected_chat_messages();
 
         // Set initial terminal title
-        let has_unread = self.state.chats.iter().any(|c| c.unread_count > 0);
-        Self::update_title(has_unread);
+        self.refresh_title();
 
         // Set up terminal
         enable_raw_mode()?;
@@ -204,7 +203,7 @@ impl App {
                             let _ = self
                                 .db
                                 .update_unread_count(&chat.id, chat.unread_count);
-                            Self::update_title(true);
+                            self.refresh_title();
                         }
                     }
 
@@ -307,6 +306,7 @@ impl App {
                 ProviderEvent::SyncCompleted => {
                     tracing::info!("Sync completed, refreshing current chat");
                     self.load_selected_chat_messages();
+                    self.refresh_title();
                 }
             }
         }
@@ -325,16 +325,14 @@ impl App {
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
-                let has_unread = self.state.chats.iter().any(|c| c.unread_count > 0);
-                Self::update_title(has_unread);
+                self.refresh_title();
             }
             Action::PrevChat => {
                 self.state.select_prev_chat();
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
-                let has_unread = self.state.chats.iter().any(|c| c.unread_count > 0);
-                Self::update_title(has_unread);
+                self.refresh_title();
             }
             Action::EnterEditing => {
                 self.state.enter_editing();
@@ -560,6 +558,10 @@ impl App {
                 }
             }
         }
+    }
+
+    fn refresh_title(&self) {
+        Self::update_title(self.state.has_unread());
     }
 
     fn update_title(has_unread: bool) {
