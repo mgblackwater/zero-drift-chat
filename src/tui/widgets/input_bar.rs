@@ -19,7 +19,7 @@ pub fn render_input_bar(
         InputMode::Editing => ("INSERT", Color::Yellow),
         InputMode::Settings => ("SETTINGS", Color::Cyan),
         InputMode::Renaming => ("RENAME", Color::Magenta),
-        InputMode::ChatMenu => ("NORMAL", Color::DarkGray),
+        InputMode::ChatMenu => ("MENU", Color::Yellow),
     };
 
     let block = Block::default()
