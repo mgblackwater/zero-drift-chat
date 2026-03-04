@@ -17,7 +17,7 @@ use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, InputMode};
+use crate::tui::app_state::{AppState, ChatMenuItem, InputMode};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
@@ -430,11 +430,43 @@ impl App {
                 self.state.input = TextArea::default();
                 self.state.input_mode = InputMode::Normal;
             }
-            Action::OpenChatMenu => {}
-            Action::ChatMenuNext => {}
-            Action::ChatMenuPrev => {}
-            Action::ChatMenuConfirm => {}
-            Action::ChatMenuClose => {}
+            Action::OpenChatMenu => {
+                self.state.open_chat_menu();
+            }
+            Action::ChatMenuNext => {
+                if let Some(ref mut menu) = self.state.chat_menu_state {
+                    menu.select_next();
+                }
+            }
+            Action::ChatMenuPrev => {
+                if let Some(ref mut menu) = self.state.chat_menu_state {
+                    menu.select_prev();
+                }
+            }
+            Action::ChatMenuConfirm => {
+                if let Some(ref menu) = self.state.chat_menu_state {
+                    let selected_item = menu.items.get(menu.selected).cloned();
+                    let chat_id = menu.chat_id.clone();
+                    let new_pinned = !menu.is_pinned;
+
+                    if let Some(ChatMenuItem::TogglePin) = selected_item {
+                        // Persist to DB
+                        let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
+                        // Update in-memory chat list
+                        if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                            chat.is_pinned = new_pinned;
+                        }
+                        // Re-sort: pinned chats first, preserve relative order otherwise
+                        self.state.chats.sort_by(|a, b| b.is_pinned.cmp(&a.is_pinned));
+                        // Reset selection to first chat to avoid out-of-bounds after re-sort
+                        self.state.chat_list_state.select(Some(0));
+                    }
+                }
+                self.state.close_chat_menu();
+            }
+            Action::ChatMenuClose => {
+                self.state.close_chat_menu();
+            }
             Action::None => {}
         }
     }
