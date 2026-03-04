@@ -9,7 +9,7 @@ use ratatui::{
 use crate::core::types::UnifiedChat;
 use crate::tui::app_state::ActivePanel;
 
-fn make_item(chat: &UnifiedChat) -> ListItem<'static> {
+fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
     let tag = format!("[{}]", chat.platform);
     let unread = if chat.unread_count > 0 {
         format!(" ({})", chat.unread_count)
@@ -17,8 +17,11 @@ fn make_item(chat: &UnifiedChat) -> ListItem<'static> {
         String::new()
     };
     let name = chat.display_name.as_deref().unwrap_or(&chat.name).to_string();
+    // Embed selector so column layout is always consistent regardless of which list is active
+    let selector = if is_selected { "▶ " } else { "  " };
     let pin_tag = if chat.is_pinned { "* " } else { "  " };
     ListItem::new(Line::from(vec![
+        Span::raw(selector),
         Span::styled(pin_tag.to_string(), Style::default().fg(Color::Yellow)),
         Span::styled(tag, Style::default().fg(Color::DarkGray)),
         Span::raw(" "),
@@ -50,12 +53,17 @@ pub fn render_chat_list(
     let selected = list_state.selected().unwrap_or(0);
     let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
 
+    let highlight = Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+
     if pinned_count == 0 {
         // No pinned chats — plain scrollable list
-        let items: Vec<ListItem> = chats.iter().map(make_item).collect();
-        let list = List::new(items)
-            .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-            .highlight_symbol("▶ ");
+        let items: Vec<ListItem> = chats
+            .iter()
+            .enumerate()
+            .map(|(i, chat)| make_item(chat, i == selected))
+            .collect();
+        // No highlight_symbol — selector is embedded in item content
+        let list = List::new(items).highlight_style(highlight);
         f.render_stateful_widget(list, inner, list_state);
         return;
     }
@@ -70,24 +78,30 @@ pub fn render_chat_list(
         .split(inner);
 
     // --- Pinned section (always visible, no scroll) ---
-    let pinned_items: Vec<ListItem> = chats.iter().filter(|c| c.is_pinned).map(make_item).collect();
+    let pinned_items: Vec<ListItem> = chats
+        .iter()
+        .filter(|c| c.is_pinned)
+        .enumerate()
+        .map(|(i, chat)| make_item(chat, selected < pinned_count && i == selected))
+        .collect();
     let mut pinned_state = ListState::default();
     if selected < pinned_count {
         pinned_state.select(Some(selected));
     }
-    let pinned_list = List::new(pinned_items)
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▶ ");
+    let pinned_list = List::new(pinned_items).highlight_style(highlight);
     f.render_stateful_widget(pinned_list, sections[0], &mut pinned_state);
 
     // --- Unpinned section (scrollable) ---
-    let unpinned_items: Vec<ListItem> = chats.iter().filter(|c| !c.is_pinned).map(make_item).collect();
+    let unpinned_items: Vec<ListItem> = chats
+        .iter()
+        .filter(|c| !c.is_pinned)
+        .enumerate()
+        .map(|(i, chat)| make_item(chat, selected >= pinned_count && i == selected - pinned_count))
+        .collect();
     let mut unpinned_state = ListState::default();
     if selected >= pinned_count {
         unpinned_state.select(Some(selected - pinned_count));
     }
-    let unpinned_list = List::new(unpinned_items)
-        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD))
-        .highlight_symbol("▶ ");
+    let unpinned_list = List::new(unpinned_items).highlight_style(highlight);
     f.render_stateful_widget(unpinned_list, sections[1], &mut unpinned_state);
 }
