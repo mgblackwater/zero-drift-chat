@@ -63,6 +63,13 @@ impl Database {
             ",
         )?;
 
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS preferences (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );"
+        )?;
+
         // Migration: add display_name column if not exists
         let _ = self
             .conn
