@@ -40,7 +40,9 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
             .trim_end_matches(|c| matches!(c, '.' | ',' | ')' | ']' | '>' | '!' | '?'))
             .len();
         let (url_part, punct_part) = raw_url.split_at(stripped_len);
-        result.push((url_part, true));
+        if !url_part.is_empty() {
+            result.push((url_part, true));
+        }
         if !punct_part.is_empty() {
             result.push((punct_part, false));
         }
