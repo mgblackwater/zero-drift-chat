@@ -17,7 +17,7 @@ use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, ChatMenuItem, InputMode};
+use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SettingsKey, SettingsValue};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
@@ -44,6 +44,14 @@ impl App {
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
+        // Load enter_sends preference from DB (default true)
+        self.state.enter_sends = self.db
+            .get_preference("enter_sends")
+            .ok()
+            .flatten()
+            .map(|v| v != "false")
+            .unwrap_or(true);
+
         // Register providers
         if self.config.mock_provider.enabled {
             let mock = MockProvider::new(
@@ -366,7 +374,7 @@ impl App {
                 self.state.scroll_down();
             }
             Action::OpenSettings => {
-                self.state.open_settings(&self.config);
+                self.state.open_settings(&self.config, self.state.enter_sends);
             }
             Action::SettingsNext => {
                 if let Some(ref mut s) = self.state.settings_state {
@@ -390,6 +398,15 @@ impl App {
                         tracing::error!("Failed to save config: {}", e);
                     } else {
                         tracing::info!("Config saved to {}", self.config_path.display());
+                    }
+                }
+                // Save EnterSends to SQLite and apply live (no restart needed)
+                if let Some(ref settings) = self.state.settings_state {
+                    if let Some(item) = settings.items.iter().find(|i| i.key == SettingsKey::EnterSends) {
+                        if let SettingsValue::Bool(v) = item.value {
+                            let _ = self.db.set_preference("enter_sends", if v { "true" } else { "false" });
+                            self.state.enter_sends = v;
+                        }
                     }
                 }
                 self.state.close_settings();
