@@ -15,9 +15,15 @@ case "$OS" in
     ASSET="zero-drift-chat-macos-aarch64"
     ;;
   Linux)
-    echo "Error: No Linux binary available yet. Build from source:"
-    echo "  cargo install --git https://github.com/$REPO"
-    exit 1
+    case "$ARCH" in
+      x86_64) ASSET="zero-drift-chat-linux-x86_64" ;;
+      *)
+        echo "Error: No Linux $ARCH binary available. Build from source (requires nightly Rust):"
+        echo "  rustup toolchain install nightly"
+        echo "  cargo +nightly install --git https://github.com/$REPO"
+        exit 1
+        ;;
+    esac
     ;;
   MINGW*|MSYS*|CYGWIN*)
     echo "On Windows, use PowerShell instead:"

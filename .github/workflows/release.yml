@@ -21,6 +21,10 @@ jobs:
             target: aarch64-apple-darwin
             artifact: zero-drift-chat-macos-aarch64
             binary: zero-drift-chat
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            artifact: zero-drift-chat-linux-x86_64
+            binary: zero-drift-chat
 
     runs-on: ${{ matrix.os }}
 
@@ -65,3 +69,4 @@ jobs:
           files: |
             artifacts/zero-drift-chat-windows-x86_64.exe/zero-drift-chat-windows-x86_64.exe
             artifacts/zero-drift-chat-macos-aarch64/zero-drift-chat-macos-aarch64
+            artifacts/zero-drift-chat-linux-x86_64/zero-drift-chat-linux-x86_64
