@@ -32,7 +32,7 @@ impl Database {
     pub fn get_all_chats(&self) -> Result<Vec<UnifiedChat>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, platform, name, last_message, unread_count, is_group, display_name, pinned
-             FROM chats ORDER BY updated_at DESC",
+             FROM chats ORDER BY pinned DESC, updated_at DESC",
         )?;
 
         let chats = stmt
@@ -73,6 +73,14 @@ impl Database {
             .collect();
 
         Ok(result)
+    }
+
+    pub fn set_chat_pinned(&self, chat_id: &str, pinned: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE chats SET pinned = ?1 WHERE id = ?2",
+            rusqlite::params![pinned as i32, chat_id],
+        )?;
+        Ok(())
     }
 
     pub fn update_unread_count(&self, chat_id: &str, count: u32) -> Result<()> {
