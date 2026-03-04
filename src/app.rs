@@ -136,7 +136,7 @@ impl App {
                     self.handle_tick();
                 }
                 Some(AppEvent::Key(key)) => {
-                    let action = map_key(key, self.state.input_mode);
+                    let action = map_key(key, self.state.input_mode, self.state.enter_sends);
                     self.handle_action(action).await;
                     if self.state.should_quit {
                         break;
