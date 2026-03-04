@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
@@ -104,6 +104,10 @@ impl App {
         // Load messages for the initially selected chat
         self.load_selected_chat_messages();
 
+        // Set initial terminal title
+        let has_unread = self.state.chats.iter().any(|c| c.unread_count > 0);
+        Self::update_title(has_unread);
+
         // Set up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
@@ -159,6 +163,7 @@ impl App {
             LeaveAlternateScreen,
             DisableMouseCapture
         )?;
+        Self::update_title(false);   // restore clean title on exit
         terminal.show_cursor()?;
 
         Ok(())
@@ -199,6 +204,7 @@ impl App {
                             let _ = self
                                 .db
                                 .update_unread_count(&chat.id, chat.unread_count);
+                            Self::update_title(true);
                         }
                     }
 
@@ -319,12 +325,16 @@ impl App {
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
+                let has_unread = self.state.chats.iter().any(|c| c.unread_count > 0);
+                Self::update_title(has_unread);
             }
             Action::PrevChat => {
                 self.state.select_prev_chat();
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
+                let has_unread = self.state.chats.iter().any(|c| c.unread_count > 0);
+                Self::update_title(has_unread);
             }
             Action::EnterEditing => {
                 self.state.enter_editing();
@@ -550,5 +560,10 @@ impl App {
                 }
             }
         }
+    }
+
+    fn update_title(has_unread: bool) {
+        let title = if has_unread { "● zero-drift-chat" } else { "zero-drift-chat" };
+        let _ = execute!(io::stdout(), SetTitle(title));
     }
 }
