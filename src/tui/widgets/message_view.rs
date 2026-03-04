@@ -55,13 +55,13 @@ pub fn render_message_view(
             Span::styled(time, Style::default().fg(Color::DarkGray)),
         ]);
 
-        let content = Line::from(Span::styled(
-            msg.content.as_text().to_string(),
-            Style::default().fg(msg_color),
-        ));
-
         lines.push(header);
-        lines.push(content);
+        for text_line in msg.content.as_text().split('\n') {
+            lines.push(Line::from(Span::styled(
+                text_line.to_string(),
+                Style::default().fg(msg_color),
+            )));
+        }
         lines.push(Line::from("")); // spacing
     }
 
