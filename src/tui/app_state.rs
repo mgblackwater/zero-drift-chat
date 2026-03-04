@@ -20,6 +20,7 @@ pub enum SettingsKey {
     MockEnabled,
     WhatsAppEnabled,
     LogLevel,
+    EnterSends,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +43,7 @@ pub struct SettingsState {
 }
 
 impl SettingsState {
-    pub fn from_config(config: &AppConfig) -> Self {
+    pub fn from_config(config: &AppConfig, enter_sends: bool) -> Self {
         let log_choices = vec![
             "trace".to_string(),
             "debug".to_string(),
@@ -71,6 +72,11 @@ impl SettingsState {
                     key: SettingsKey::LogLevel,
                     label: "Log Level".to_string(),
                     value: SettingsValue::Choice(log_choices, log_idx),
+                },
+                SettingsItem {
+                    key: SettingsKey::EnterSends,
+                    label: "Enter to Send".to_string(),
+                    value: SettingsValue::Bool(enter_sends),
                 },
             ],
             selected: 0,
@@ -113,6 +119,9 @@ impl SettingsState {
                 }
                 (SettingsKey::LogLevel, SettingsValue::Choice(choices, idx)) => {
                     config.general.log_level = choices[*idx].clone();
+                }
+                (SettingsKey::EnterSends, _) => {
+                    // stored in SQLite preferences, not TOML config
                 }
                 _ => {}
             }
@@ -187,6 +196,7 @@ pub struct AppState {
     pub mock_enabled: bool,
     pub settings_state: Option<SettingsState>,
     pub chat_menu_state: Option<ChatMenuState>,
+    pub enter_sends: bool,
 }
 
 impl AppState {
@@ -208,6 +218,7 @@ impl AppState {
             mock_enabled: false,
             settings_state: None,
             chat_menu_state: None,
+            enter_sends: true,
         }
     }
 
@@ -284,8 +295,8 @@ impl AppState {
         self.scroll_offset = self.scroll_offset.saturating_sub(3);
     }
 
-    pub fn open_settings(&mut self, config: &AppConfig) {
-        self.settings_state = Some(SettingsState::from_config(config));
+    pub fn open_settings(&mut self, config: &AppConfig, enter_sends: bool) {
+        self.settings_state = Some(SettingsState::from_config(config, enter_sends));
         self.input_mode = InputMode::Settings;
     }
 
