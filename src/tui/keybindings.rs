@@ -59,7 +59,7 @@ fn map_editing_mode(key: KeyEvent) -> Action {
         (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => Action::SubmitMessage,
         // Alt+Enter: fallback for macOS Terminal.app and other terminals
         (KeyCode::Enter, m) if m.contains(KeyModifiers::ALT) => Action::SubmitMessage,
-        // Ctrl+U: clear entire buffer (override tui-textarea default of delete-to-line-start)
+        // Ctrl+U: clear entire buffer (override tui-textarea default of undo)
         (KeyCode::Char('u'), m) if m.contains(KeyModifiers::CONTROL) => Action::ClearInput,
         // All other keys forwarded to TextArea
         _ => Action::InputKey(key),
@@ -80,9 +80,10 @@ fn map_settings_mode(key: KeyEvent) -> Action {
 fn map_renaming_mode(key: KeyEvent) -> Action {
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => Action::CancelRename,
-        // Plain Enter confirms rename (single-line, no multi-line needed)
+        // Plain Enter confirms rename (single-line context)
         (KeyCode::Enter, m) if m == KeyModifiers::NONE => Action::ConfirmRename,
-        // All other keys forwarded to TextArea
+        // Block Shift+Enter / Alt+Enter from inserting newlines into a chat name
+        (KeyCode::Enter, _) => Action::None,
         _ => Action::InputKey(key),
     }
 }

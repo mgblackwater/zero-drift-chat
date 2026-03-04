@@ -411,7 +411,11 @@ impl App {
                 }
             }
             Action::ConfirmRename => {
-                let new_name = self.state.take_input();
+                let new_name = self.state.input.lines()
+                    .first()
+                    .cloned()
+                    .unwrap_or_default();
+                self.state.input = tui_textarea::TextArea::default();
                 if !new_name.is_empty() {
                     if let Some(idx) = self.state.chat_list_state.selected() {
                         if let Some(chat) = self.state.chats.get_mut(idx) {
