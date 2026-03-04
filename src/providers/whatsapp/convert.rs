@@ -177,30 +177,76 @@ pub fn text_to_wa_message(text: &str) -> wa::Message {
 
 /// Extract message content from a wa::Message, returning None for unsupported types.
 fn extract_message_content(msg: &wa::Message) -> Option<MessageContent> {
-    let text = msg.text_content().or_else(|| msg.get_caption());
-    match text {
-        Some(t) => Some(MessageContent::Text(t.to_string())),
-        None => {
-            let base = msg.get_base_message();
-            if base.image_message.is_some() {
-                Some(MessageContent::Text("[Image]".to_string()))
-            } else if base.document_message.is_some() {
-                Some(MessageContent::Text("[Document]".to_string()))
-            } else if base.audio_message.is_some() {
-                Some(MessageContent::Text("[Audio]".to_string()))
-            } else if base.video_message.is_some() {
-                Some(MessageContent::Text("[Video]".to_string()))
-            } else if base.sticker_message.is_some() {
-                Some(MessageContent::Text("[Sticker]".to_string()))
-            } else if base.contact_message.is_some() {
-                Some(MessageContent::Text("[Contact]".to_string()))
-            } else if base.location_message.is_some() {
-                Some(MessageContent::Text("[Location]".to_string()))
-            } else {
-                None
-            }
+    // Reactions — show as a simple line
+    if let Some(ref reaction) = msg.reaction_message {
+        let emoji = reaction.text.as_deref().unwrap_or("");
+        if emoji.is_empty() {
+            return Some(MessageContent::Text("removed a reaction".to_string()));
         }
+        return Some(MessageContent::Text(format!("reacted {}", emoji)));
     }
+
+    // Plain text (conversation or extended text message)
+    if let Some(text) = msg.text_content() {
+        return Some(MessageContent::Text(text.to_string()));
+    }
+
+    // Media types with enriched metadata
+    let base = msg.get_base_message();
+
+    if let Some(ref img) = base.image_message {
+        return Some(MessageContent::Text(
+            match img.caption.as_deref().filter(|s| !s.is_empty()) {
+                Some(c) => format!("[Image] {}", c),
+                None => "[Image]".to_string(),
+            },
+        ));
+    }
+    if let Some(ref vid) = base.video_message {
+        let mut label = "[Video".to_string();
+        if let Some(s) = vid.seconds {
+            label.push_str(&format!(" {}:{:02}", s / 60, s % 60));
+        }
+        label.push(']');
+        if let Some(c) = vid.caption.as_deref().filter(|s| !s.is_empty()) {
+            label.push(' ');
+            label.push_str(c);
+        }
+        return Some(MessageContent::Text(label));
+    }
+    if let Some(ref doc) = base.document_message {
+        let name = doc
+            .file_name
+            .as_deref()
+            .or(doc.title.as_deref())
+            .filter(|s| !s.is_empty());
+        return Some(MessageContent::Text(match name {
+            Some(n) => format!("[Document] {}", n),
+            None => "[Document]".to_string(),
+        }));
+    }
+    if let Some(ref audio) = base.audio_message {
+        let tag = if audio.ptt.unwrap_or(false) {
+            "Voice"
+        } else {
+            "Audio"
+        };
+        return Some(MessageContent::Text(match audio.seconds {
+            Some(s) => format!("[{}] {}:{:02}", tag, s / 60, s % 60),
+            None => format!("[{}]", tag),
+        }));
+    }
+    if base.sticker_message.is_some() {
+        return Some(MessageContent::Text("[Sticker]".to_string()));
+    }
+    if base.contact_message.is_some() {
+        return Some(MessageContent::Text("[Contact]".to_string()));
+    }
+    if base.location_message.is_some() {
+        return Some(MessageContent::Text("[Location]".to_string()));
+    }
+
+    None
 }
 
 /// Strip the @server suffix from a JID string.
