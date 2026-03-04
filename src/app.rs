@@ -15,6 +15,8 @@ use crate::core::MessageRouter;
 use crate::providers::mock::MockProvider;
 use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database};
+use tui_textarea::TextArea;
+
 use crate::tui::app_state::{AppState, InputMode};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
@@ -349,11 +351,11 @@ impl App {
                     }
                 }
             }
-            Action::DeleteChar => {
-                self.state.delete_char();
+            Action::InputKey(key) => {
+                self.state.input.input(key);
             }
-            Action::InsertChar(c) => {
-                self.state.push_char(c);
+            Action::ClearInput => {
+                self.state.input = TextArea::default();
             }
             Action::ScrollUp => {
                 self.state.scroll_up();
@@ -401,8 +403,9 @@ impl App {
                             .as_ref()
                             .unwrap_or(&chat.name)
                             .clone();
-                        self.state.input_buffer = name;
-                        self.state.cursor_position = self.state.input_buffer.len();
+                        let mut ta = TextArea::from(vec![name]);
+                        ta.move_cursor(tui_textarea::CursorMove::End);
+                        self.state.input = ta;
                         self.state.input_mode = InputMode::Renaming;
                     }
                 }
@@ -420,8 +423,7 @@ impl App {
                 self.state.input_mode = InputMode::Normal;
             }
             Action::CancelRename => {
-                self.state.input_buffer.clear();
-                self.state.cursor_position = 0;
+                self.state.input = TextArea::default();
                 self.state.input_mode = InputMode::Normal;
             }
             Action::None => {}
