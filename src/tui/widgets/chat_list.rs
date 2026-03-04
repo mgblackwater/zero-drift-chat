@@ -17,7 +17,7 @@ fn make_item(chat: &UnifiedChat) -> ListItem<'static> {
         String::new()
     };
     let name = chat.display_name.as_deref().unwrap_or(&chat.name).to_string();
-    let pin_tag = if chat.is_pinned { "* " } else { "" };
+    let pin_tag = if chat.is_pinned { "* " } else { "  " };
     ListItem::new(Line::from(vec![
         Span::styled(pin_tag.to_string(), Style::default().fg(Color::Yellow)),
         Span::styled(tag, Style::default().fg(Color::DarkGray)),
