@@ -59,8 +59,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     input_bar::render_input_bar(
         f,
         input_area,
-        &state.input_buffer,
-        state.cursor_position,
+        &state.input,
         state.input_mode,
     );
 
