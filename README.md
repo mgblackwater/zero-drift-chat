@@ -4,24 +4,13 @@ A unified messaging TUI built in Rust. Aggregates multiple chat platforms into a
 
 Currently supports **WhatsApp** via [whatsapp-rust](https://github.com/jlucaso1/whatsapp-rust) (WhatsApp Web multi-device protocol).
 
-## Features
-
-- Real WhatsApp messaging — send and receive from your terminal
-- QR code authentication rendered directly in the terminal
-- Session persistence — scan once, auto-reconnects on restart
-- 3-panel TUI: chat list | message view | input bar
-- Vim-style keybindings (j/k navigate, i to type, Tab to switch panels)
-- In-app settings overlay — toggle providers and log level without editing files
-- Chat rename — press `r` to set custom display names (persisted across restarts)
-- WhatsApp history sync — auto-populates chat list with group names and contacts
-- SQLite message storage with full chat history
-- Mock provider for testing without a WhatsApp account
+See [FEATURES.md](FEATURES.md) for the full feature list.
 
 ## Install
 
 ### From release (no Rust needed)
 
-**macOS:**
+**macOS / Linux / WSL:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/mgblackwater/zero-drift-chat/master/install.sh | bash
 ```
@@ -33,10 +22,14 @@ irm https://raw.githubusercontent.com/mgblackwater/zero-drift-chat/master/instal
 
 ### From source
 
-Requires [Rust nightly](https://rustup.rs/):
+Requires [Rust nightly](https://rustup.rs/) (selected automatically via `rust-toolchain.toml`):
 
 ```bash
+# Install from git
 cargo install --git https://github.com/mgblackwater/zero-drift-chat
+
+# Or install from a local clone
+cargo install --path .
 ```
 
 ## Usage
@@ -65,7 +58,10 @@ On first launch with WhatsApp enabled, a QR code appears. Scan it with WhatsApp 
 
 | Key | Action |
 |-----|--------|
-| `Enter` | Send message |
+| `Enter` | Insert newline |
+| `Shift+Enter` / `Alt+Enter` | Send message |
+| `← →` / `Home` / `End` | Move cursor |
+| `Ctrl+U` | Clear input |
 | `Esc` | Back to normal mode |
 
 **Settings overlay:**
