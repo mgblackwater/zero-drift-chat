@@ -14,7 +14,7 @@ use crate::core::types::{AuthStatus, MessageContent, Platform};
 use crate::core::MessageRouter;
 use crate::providers::mock::MockProvider;
 use crate::providers::whatsapp::WhatsAppProvider;
-use crate::storage::Database;
+use crate::storage::{AddressBook, Database};
 use crate::tui::app_state::{AppState, InputMode};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
@@ -24,16 +24,18 @@ pub struct App {
     state: AppState,
     router: MessageRouter,
     db: Database,
+    address_book: AddressBook,
     config: AppConfig,
     config_path: PathBuf,
 }
 
 impl App {
-    pub fn new(config: AppConfig, db: Database, config_path: PathBuf) -> Self {
+    pub fn new(config: AppConfig, db: Database, address_book: AddressBook, config_path: PathBuf) -> Self {
         Self {
             state: AppState::new(),
             router: MessageRouter::new(),
             db,
+            address_book,
             config,
             config_path,
         }
@@ -66,7 +68,7 @@ impl App {
 
         // Load persisted chats from DB, filtering out disabled providers
         if let Ok(chats) = self.db.get_all_chats() {
-            let chats: Vec<_> = chats
+            let mut chats: Vec<_> = chats
                 .into_iter()
                 .filter(|c| match c.platform {
                     Platform::Mock => self.config.mock_provider.enabled,
@@ -74,6 +76,16 @@ impl App {
                     _ => true,
                 })
                 .collect();
+
+            // Apply display names from address book
+            if let Ok(names) = self.address_book.get_all_display_names() {
+                for chat in &mut chats {
+                    if let Some(name) = names.get(&chat.id) {
+                        chat.display_name = Some(name.clone());
+                    }
+                }
+            }
+
             if !chats.is_empty() {
                 self.state.chats = chats;
             }
@@ -146,7 +158,7 @@ impl App {
         let events = self.router.poll_events();
 
         // Cap events per tick to avoid blocking the render loop
-        let max_events = 50;
+        let max_events = 500;
         for event in events.into_iter().take(max_events) {
             match event {
                 ProviderEvent::NewMessage(msg) => {
@@ -274,6 +286,10 @@ impl App {
                     tracing::info!("QR code received for WhatsApp pairing");
                     self.state.qr_code = Some(code);
                 }
+                ProviderEvent::SyncCompleted => {
+                    tracing::info!("Sync completed, refreshing current chat");
+                    self.load_selected_chat_messages();
+                }
             }
         }
     }
@@ -396,7 +412,7 @@ impl App {
                     if let Some(idx) = self.state.chat_list_state.selected() {
                         if let Some(chat) = self.state.chats.get_mut(idx) {
                             chat.display_name = Some(new_name.clone());
-                            let _ = self.db.set_display_name(&chat.id, &new_name);
+                            let _ = self.address_book.set_display_name(&chat.id, &new_name);
                         }
                     }
                 }

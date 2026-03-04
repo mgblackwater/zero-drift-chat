@@ -80,14 +80,6 @@ impl Database {
         Ok(())
     }
 
-    pub fn set_display_name(&self, chat_id: &str, display_name: &str) -> Result<()> {
-        self.conn.execute(
-            "UPDATE chats SET display_name = ?1 WHERE id = ?2",
-            rusqlite::params![display_name, chat_id],
-        )?;
-        Ok(())
-    }
-
     pub fn update_last_message(&self, chat_id: &str, last_message: &str) -> Result<()> {
         self.conn.execute(
             "UPDATE chats SET last_message = ?1, updated_at = datetime('now') WHERE id = ?2",

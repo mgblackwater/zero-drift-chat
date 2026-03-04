@@ -56,6 +56,8 @@ impl MessagingProvider for WhatsAppProvider {
         let http_client = UreqHttpClient::new();
 
         let tx_events = tx.clone();
+        let jid_cache = JidCache::new();
+        let jid_cache_clone = jid_cache.clone();
 
         let mut bot = Bot::builder()
             .with_backend(backend)
@@ -63,8 +65,9 @@ impl MessagingProvider for WhatsAppProvider {
             .with_http_client(http_client)
             .on_event(move |event, _client| {
                 let tx = tx_events.clone();
+                let cache = jid_cache_clone.clone();
                 async move {
-                    handle_wa_event(event, &tx);
+                    handle_wa_event(event, &tx, &cache);
                 }
             })
             .build()
@@ -163,7 +166,11 @@ impl MessagingProvider for WhatsAppProvider {
 }
 
 /// Handle a WhatsApp event and forward it to our provider event channel.
-fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::UnboundedSender<ProviderEvent>) {
+fn handle_wa_event(
+    event: whatsapp_rust::types::events::Event,
+    tx: &mpsc::UnboundedSender<ProviderEvent>,
+    jid_cache: &JidCache,
+) {
     use whatsapp_rust::types::events::Event;
     use whatsapp_rust::Jid;
 
@@ -198,6 +205,12 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
         }
         Event::Message(msg, info) => {
             let source = &info.source;
+
+            // Record LID↔PN mapping if alternate JID is available
+            if let Some(ref alt) = source.sender_alt {
+                jid_cache.record_mapping(&source.sender, alt);
+            }
+
             if let Some(unified) = wa_message_to_unified(
                 &msg,
                 &info.push_name,
@@ -207,8 +220,9 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
                 &source.sender,
                 source.is_from_me,
                 source.is_group,
+                jid_cache,
             ) {
-                let chat_id = jid_to_chat_id(&source.chat);
+                let chat_id = jid_to_chat_id(&source.chat, jid_cache);
 
                 // Determine chat name:
                 // - Groups: never use sender's push_name (that's a person, not the group)
@@ -252,28 +266,26 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
                 });
             }
         }
-        Event::HistorySync(sync) => {
-            tracing::info!(
-                "History sync: {} conversations, {} pushnames",
-                sync.conversations.len(),
-                sync.pushnames.len()
-            );
-
-            // Build pushname lookup for 1:1 chat name resolution
-            let pushname_map: std::collections::HashMap<&str, &str> = sync
-                .pushnames
-                .iter()
-                .filter_map(|pn| match (&pn.id, &pn.pushname) {
-                    (Some(id), Some(name)) if !name.is_empty() => Some((id.as_str(), name.as_str())),
-                    _ => None,
-                })
-                .collect();
-
-            let mut chats = Vec::new();
-            for conv in &sync.conversations {
+        Event::JoinedGroup(lazy_conv) => {
+            if let Some(conv) = lazy_conv.get() {
                 let jid_str = &conv.id;
+                tracing::info!(
+                    "JoinedGroup (history sync): {} ({} messages)",
+                    jid_str,
+                    conv.messages.len()
+                );
+
+                // Record LID→PN mapping if available
+                if let Some(ref lid_jid) = conv.lid_jid {
+                    if lid_jid.ends_with("@lid") && !jid_str.ends_with("@lid") {
+                        jid_cache.record_lid_to_pn(lid_jid, jid_str);
+                    } else if jid_str.ends_with("@lid") && !lid_jid.ends_with("@lid") {
+                        jid_cache.record_lid_to_pn(jid_str, lid_jid);
+                    }
+                }
+
                 if let Ok(jid) = jid_str.parse::<Jid>() {
-                    let chat_id = jid_to_chat_id(&jid);
+                    let chat_id = jid_to_chat_id(&jid, jid_cache);
                     let is_group = jid_str.contains("@g.us");
 
                     let name = if is_group {
@@ -281,31 +293,49 @@ fn handle_wa_event(event: whatsapp_rust::types::events::Event, tx: &mpsc::Unboun
                             .clone()
                             .unwrap_or_else(|| jid_to_display_name(&jid))
                     } else {
-                        pushname_map
-                            .get(jid_str.as_str())
-                            .map(|s| s.to_string())
-                            .or_else(|| conv.display_name.clone())
+                        conv.display_name
+                            .clone()
                             .unwrap_or_else(|| jid_to_display_name(&jid))
                     };
 
-                    chats.push(UnifiedChat {
+                    // Convert and emit each history message
+                    let mut msg_count = 0;
+                    let mut last_preview = None;
+                    for hsm in &conv.messages {
+                        if let Some(ref web_msg) = hsm.message {
+                            if let Some(unified) = web_msg_to_unified(web_msg, jid_cache) {
+                                last_preview = Some(unified.content.as_text().to_string());
+                                let _ = tx.send(ProviderEvent::NewMessage(unified));
+                                msg_count += 1;
+                            }
+                        }
+                    }
+
+                    let chat = UnifiedChat {
                         id: chat_id,
                         platform: Platform::WhatsApp,
                         name,
                         display_name: None,
-                        last_message: None,
+                        last_message: last_preview,
                         unread_count: conv.unread_count.unwrap_or(0),
                         is_group,
-                    });
+                    };
+
+                    let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));
+
+                    if msg_count > 0 {
+                        tracing::info!(
+                            "History sync: emitted {} messages for {}",
+                            msg_count,
+                            jid_str
+                        );
+                    }
                 }
-            }
-            if !chats.is_empty() {
-                tracing::info!("Synced {} WhatsApp chats", chats.len());
-                let _ = tx.send(ProviderEvent::ChatsUpdated(chats));
             }
         }
         Event::OfflineSyncCompleted(_) => {
             tracing::info!("WhatsApp offline sync completed");
+            let _ = tx.send(ProviderEvent::SyncCompleted);
         }
         _ => {
             tracing::trace!("Unhandled WhatsApp event");
