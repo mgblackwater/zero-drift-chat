@@ -11,8 +11,8 @@ pub enum Action {
     EnterEditing,
     ExitEditing,
     SubmitMessage,
-    DeleteChar,
-    InsertChar(char),
+    ClearInput,
+    InputKey(KeyEvent),
     ScrollUp,
     ScrollDown,
     OpenSettings,
@@ -53,12 +53,18 @@ fn map_normal_mode(key: KeyEvent) -> Action {
 }
 
 fn map_editing_mode(key: KeyEvent) -> Action {
-    match key.code {
-        KeyCode::Esc => Action::ExitEditing,
-        KeyCode::Enter => Action::SubmitMessage,
-        KeyCode::Backspace => Action::DeleteChar,
-        KeyCode::Char(c) => Action::InsertChar(c),
-        _ => Action::None,
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => Action::ExitEditing,
+        // Shift+Enter: works on Windows Terminal, iTerm2, modern macOS terminals, WSL
+        (KeyCode::Enter, m) if m.contains(KeyModifiers::SHIFT) => Action::SubmitMessage,
+        // Alt+Enter: fallback for macOS Terminal.app and other terminals
+        (KeyCode::Enter, m) if m.contains(KeyModifiers::ALT) => Action::SubmitMessage,
+        // Ctrl+S: universal reliable fallback (works on all terminals including WSL)
+        (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => Action::SubmitMessage,
+        // Ctrl+U: clear entire buffer (override tui-textarea default of undo)
+        (KeyCode::Char('u'), m) if m.contains(KeyModifiers::CONTROL) => Action::ClearInput,
+        // All other keys forwarded to TextArea
+        _ => Action::InputKey(key),
     }
 }
 
@@ -74,11 +80,12 @@ fn map_settings_mode(key: KeyEvent) -> Action {
 }
 
 fn map_renaming_mode(key: KeyEvent) -> Action {
-    match key.code {
-        KeyCode::Esc => Action::CancelRename,
-        KeyCode::Enter => Action::ConfirmRename,
-        KeyCode::Backspace => Action::DeleteChar,
-        KeyCode::Char(c) => Action::InsertChar(c),
-        _ => Action::None,
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => Action::CancelRename,
+        // Plain Enter confirms rename (single-line context)
+        (KeyCode::Enter, m) if m == KeyModifiers::NONE => Action::ConfirmRename,
+        // Block Shift+Enter / Alt+Enter from inserting newlines into a chat name
+        (KeyCode::Enter, _) => Action::None,
+        _ => Action::InputKey(key),
     }
 }
