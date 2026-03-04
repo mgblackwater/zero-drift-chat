@@ -168,3 +168,67 @@ pub fn render_message_view(
 
     f.render_widget(paragraph, area);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::split_line_with_urls;
+
+    #[test]
+    fn plain_text_no_url() {
+        assert_eq!(split_line_with_urls("hello world"), vec![("hello world", false)]);
+    }
+
+    #[test]
+    fn empty_string() {
+        assert!(split_line_with_urls("").is_empty());
+    }
+
+    #[test]
+    fn single_url() {
+        assert_eq!(split_line_with_urls("https://example.com"), vec![("https://example.com", true)]);
+    }
+
+    #[test]
+    fn url_with_trailing_period() {
+        assert_eq!(
+            split_line_with_urls("See https://example.com."),
+            vec![("See ", false), ("https://example.com", true), (".", false)]
+        );
+    }
+
+    #[test]
+    fn url_in_parens() {
+        assert_eq!(
+            split_line_with_urls("(https://example.com)"),
+            vec![("(", false), ("https://example.com", true), (")", false)]
+        );
+    }
+
+    #[test]
+    fn url_with_trailing_comma() {
+        assert_eq!(
+            split_line_with_urls("check https://example.com, and more"),
+            vec![("check ", false), ("https://example.com", true), (",", false), (" and more", false)]
+        );
+    }
+
+    #[test]
+    fn two_urls_in_one_line() {
+        assert_eq!(
+            split_line_with_urls("a https://foo.com b https://bar.com c"),
+            vec![
+                ("a ", false),
+                ("https://foo.com", true),
+                (" b ", false),
+                ("https://bar.com", true),
+                (" c", false),
+            ]
+        );
+    }
+
+    #[test]
+    fn http_and_https_both_detected() {
+        assert_eq!(split_line_with_urls("http://a.com"), vec![("http://a.com", true)]);
+        assert_eq!(split_line_with_urls("https://a.com"), vec![("https://a.com", true)]);
+    }
+}
