@@ -38,7 +38,7 @@ esac
 
 # Get latest release download URL
 DOWNLOAD_URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-  | grep "browser_download_url.*$ASSET" \
+  | grep "browser_download_url.*${ASSET}\"" \
   | cut -d '"' -f 4)"
 
 if [ -z "$DOWNLOAD_URL" ]; then
