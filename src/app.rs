@@ -305,13 +305,14 @@ impl App {
             Action::NextChat => {
                 self.state.select_next_chat();
                 self.load_selected_chat_messages();
-                // Clear unread for selected chat
                 self.clear_selected_unread();
+                self.send_read_receipts().await;
             }
             Action::PrevChat => {
                 self.state.select_prev_chat();
                 self.load_selected_chat_messages();
                 self.clear_selected_unread();
+                self.send_read_receipts().await;
             }
             Action::EnterEditing => {
                 self.state.enter_editing();
@@ -429,7 +430,7 @@ impl App {
 
     fn load_selected_chat_messages(&mut self) {
         if let Some(chat_id) = self.state.selected_chat_id().map(|s| s.to_string()) {
-            match self.db.get_messages_for_chat(&chat_id) {
+            match self.db.get_recent_messages_for_chat(&chat_id, 50) {
                 Ok(messages) => {
                     self.state.messages = messages;
                     self.state.scroll_offset = 0;
@@ -437,6 +438,35 @@ impl App {
                 Err(e) => {
                     tracing::error!("Failed to load messages: {}", e);
                 }
+            }
+        }
+    }
+
+    async fn send_read_receipts(&mut self) {
+        let (chat_id, platform) = match self.state.chat_list_state.selected() {
+            Some(idx) => match self.state.chats.get(idx) {
+                Some(chat) => (chat.id.clone(), chat.platform),
+                None => return,
+            },
+            None => return,
+        };
+
+        // Collect IDs of incoming messages (those are the ones we need to mark as read)
+        let msg_ids: Vec<String> = self
+            .state
+            .messages
+            .iter()
+            .filter(|m| !m.is_outgoing)
+            .map(|m| m.id.clone())
+            .collect();
+
+        if msg_ids.is_empty() {
+            return;
+        }
+
+        if let Some(provider) = self.router.get_provider_mut(platform) {
+            if let Err(e) = provider.mark_as_read(&chat_id, msg_ids).await {
+                tracing::error!("Failed to send read receipts: {}", e);
             }
         }
     }

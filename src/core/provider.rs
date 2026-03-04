@@ -24,6 +24,9 @@ pub trait MessagingProvider: Send + Sync {
     async fn send_message(&self, chat_id: &str, content: MessageContent) -> Result<UnifiedMessage>;
     async fn get_chats(&self) -> Result<Vec<UnifiedChat>>;
     async fn get_messages(&self, chat_id: &str) -> Result<Vec<UnifiedMessage>>;
+    async fn mark_as_read(&self, _chat_id: &str, _msg_ids: Vec<String>) -> Result<()> {
+        Ok(())
+    }
     fn name(&self) -> &str;
     fn platform(&self) -> Platform;
     fn auth_status(&self) -> AuthStatus;

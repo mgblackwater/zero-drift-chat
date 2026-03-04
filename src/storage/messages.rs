@@ -82,6 +82,67 @@ impl Database {
         Ok(result)
     }
 
+    pub fn get_recent_messages_for_chat(
+        &self,
+        chat_id: &str,
+        limit: u32,
+    ) -> Result<Vec<UnifiedMessage>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, chat_id, platform, sender, content, timestamp, status, is_outgoing
+             FROM messages WHERE chat_id = ?1 ORDER BY timestamp DESC LIMIT ?2",
+        )?;
+
+        let messages = stmt
+            .query_map(rusqlite::params![chat_id, limit], |row| {
+                let id: String = row.get(0)?;
+                let chat_id: String = row.get(1)?;
+                let platform_str: String = row.get(2)?;
+                let sender: String = row.get(3)?;
+                let content_json: String = row.get(4)?;
+                let timestamp_str: String = row.get(5)?;
+                let status_str: String = row.get(6)?;
+                let is_outgoing: i32 = row.get(7)?;
+
+                Ok((
+                    id,
+                    chat_id,
+                    platform_str,
+                    sender,
+                    content_json,
+                    timestamp_str,
+                    status_str,
+                    is_outgoing,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        let mut result = Vec::new();
+        for (id, chat_id, platform_str, sender, content_json, timestamp_str, status_str, is_outgoing) in messages {
+            let platform = parse_platform(&platform_str);
+            let content: MessageContent = serde_json::from_str(&content_json)
+                .unwrap_or(MessageContent::Text(content_json));
+            let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now());
+            let status = parse_status(&status_str);
+
+            result.push(UnifiedMessage {
+                id,
+                chat_id,
+                platform,
+                sender,
+                content,
+                timestamp,
+                status,
+                is_outgoing: is_outgoing != 0,
+            });
+        }
+
+        // Reverse so oldest messages come first (for display order)
+        result.reverse();
+        Ok(result)
+    }
+
     pub fn update_message_status(&self, message_id: &str, status: MessageStatus) -> Result<()> {
         let status_str = format!("{:?}", status);
         self.conn.execute(

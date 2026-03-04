@@ -144,6 +144,26 @@ impl MessagingProvider for WhatsAppProvider {
         Ok(unified)
     }
 
+    async fn mark_as_read(&self, chat_id: &str, msg_ids: Vec<String>) -> Result<()> {
+        if msg_ids.is_empty() {
+            return Ok(());
+        }
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WhatsApp client not connected"))?;
+
+        let jid = chat_id_to_jid(chat_id)
+            .ok_or_else(|| anyhow::anyhow!("Invalid WhatsApp chat ID: {}", chat_id))?;
+
+        client
+            .mark_as_read(&jid, None, msg_ids)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to send read receipt: {}", e))?;
+
+        Ok(())
+    }
+
     async fn get_chats(&self) -> Result<Vec<UnifiedChat>> {
         Ok(Vec::new())
     }
