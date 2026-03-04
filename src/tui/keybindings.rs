@@ -24,6 +24,11 @@ pub enum Action {
     RenameChat,
     ConfirmRename,
     CancelRename,
+    OpenChatMenu,
+    ChatMenuNext,
+    ChatMenuPrev,
+    ChatMenuConfirm,
+    ChatMenuClose,
     None,
 }
 
@@ -33,7 +38,7 @@ pub fn map_key(key: KeyEvent, mode: InputMode) -> Action {
         InputMode::Editing => map_editing_mode(key),
         InputMode::Settings => map_settings_mode(key),
         InputMode::Renaming => map_renaming_mode(key),
-        InputMode::ChatMenu => Action::None,
+        InputMode::ChatMenu => map_chat_menu_mode(key),
     }
 }
 
@@ -47,6 +52,7 @@ fn map_normal_mode(key: KeyEvent) -> Action {
         KeyCode::Char('i') | KeyCode::Enter => Action::EnterEditing,
         KeyCode::Char('s') => Action::OpenSettings,
         KeyCode::Char('r') => Action::RenameChat,
+        KeyCode::Char('x') => Action::OpenChatMenu,
         KeyCode::PageUp => Action::ScrollUp,
         KeyCode::PageDown => Action::ScrollDown,
         _ => Action::None,
@@ -76,6 +82,16 @@ fn map_settings_mode(key: KeyEvent) -> Action {
         KeyCode::Enter | KeyCode::Char(' ') => Action::SettingsToggle,
         KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::SettingsSave,
         KeyCode::Esc | KeyCode::Char('q') => Action::SettingsClose,
+        _ => Action::None,
+    }
+}
+
+fn map_chat_menu_mode(key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => Action::ChatMenuNext,
+        KeyCode::Char('k') | KeyCode::Up => Action::ChatMenuPrev,
+        KeyCode::Enter | KeyCode::Char('p') => Action::ChatMenuConfirm,
+        KeyCode::Esc | KeyCode::Char('q') => Action::ChatMenuClose,
         _ => Action::None,
     }
 }

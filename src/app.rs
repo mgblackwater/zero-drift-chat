@@ -430,6 +430,11 @@ impl App {
                 self.state.input = TextArea::default();
                 self.state.input_mode = InputMode::Normal;
             }
+            Action::OpenChatMenu => {}
+            Action::ChatMenuNext => {}
+            Action::ChatMenuPrev => {}
+            Action::ChatMenuConfirm => {}
+            Action::ChatMenuClose => {}
             Action::None => {}
         }
     }
