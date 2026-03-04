@@ -215,7 +215,9 @@ impl App {
                         if pos > 0 {
                             let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
                             let chat = self.state.chats.remove(pos);
-                            self.state.chats.insert(0, chat);
+                            // Insert after the last pinned chat so pinned chats stay at the top
+                            let insert_pos = self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0);
+                            self.state.chats.insert(insert_pos, chat);
                             // Keep selection on the same chat
                             if let Some(id) = selected_id {
                                 if let Some(new_pos) = self.state.chats.iter().position(|c| c.id == id) {
@@ -457,9 +459,10 @@ impl App {
                             chat.is_pinned = new_pinned;
                         }
                         // Re-sort: pinned chats first, preserve relative order otherwise
-                        self.state.chats.sort_by(|a, b| b.is_pinned.cmp(&a.is_pinned));
-                        // Reset selection to first chat to avoid out-of-bounds after re-sort
-                        self.state.chat_list_state.select(Some(0));
+                        self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
+                        // Select the chat that was just pinned/unpinned at its new position
+                        let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
+                        self.state.chat_list_state.select(Some(new_idx));
                     }
                 }
                 self.state.close_chat_menu();
