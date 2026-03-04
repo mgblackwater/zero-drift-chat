@@ -17,12 +17,19 @@ pub fn render_status_bar(
 ) {
     let hints = match mode {
         InputMode::Normal => "q:Quit | Tab:Switch | j/k:Navigate | i:Type | r:Rename | s:Settings",
-        InputMode::Editing => "Esc:Normal | Enter:Send | Type your message",
+        InputMode::Editing => "Esc:Normal | Enter:Newline | Shift+Enter/Alt+Enter:Send | Ctrl+U:Clear",
         InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
         InputMode::Renaming => "Enter:Confirm | Esc:Cancel | Type new name",
     };
 
     let mut spans = Vec::new();
+
+    // Version
+    spans.push(Span::styled(
+        format!(" v{} ", env!("CARGO_PKG_VERSION")),
+        Style::default().fg(Color::DarkGray),
+    ));
+    spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
 
     if mock_enabled {
         spans.push(Span::styled(" ● ", Style::default().fg(Color::Green)));
