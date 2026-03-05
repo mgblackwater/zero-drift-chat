@@ -59,6 +59,7 @@ pub fn render_message_view(
     chat_name: &str,
     scroll_offset: u16,
     active_panel: ActivePanel,
+    new_message_count: usize,
 ) {
     let border_color = if active_panel == ActivePanel::MessageView {
         Color::Cyan
@@ -78,13 +79,46 @@ pub fn render_message_view(
         return;
     }
 
+    // Find the index of the first "new" message by counting backwards
+    // through incoming messages until we reach new_message_count.
+    let new_start_idx = if new_message_count > 0 {
+        let mut counted = 0;
+        let mut idx = None;
+        for (i, msg) in messages.iter().enumerate().rev() {
+            if !msg.is_outgoing {
+                counted += 1;
+                if counted == new_message_count {
+                    idx = Some(i);
+                    break;
+                }
+            }
+        }
+        idx
+    } else {
+        None
+    };
+
     let mut lines: Vec<Line> = Vec::new();
 
-    for msg in messages {
+    for (i, msg) in messages.iter().enumerate() {
+        // Insert a full-width "─── N new ───" separator before the first new message
+        if Some(i) == new_start_idx {
+            let content_width = area.width.saturating_sub(2) as usize;
+            let label = format!(" {} new ", new_message_count);
+            let dashes = content_width.saturating_sub(label.len());
+            let left = dashes / 2;
+            let right = dashes - left;
+            let separator = format!("{}{}{}", "─".repeat(left), label, "─".repeat(right));
+            lines.push(Line::styled(separator, Style::default().fg(Color::Yellow)));
+        }
+
         let time = msg.timestamp.with_timezone(&Local).format("%H:%M").to_string();
+        let is_new = new_start_idx.map(|s| i >= s).unwrap_or(false) && !msg.is_outgoing;
 
         let (sender_color, msg_color) = if msg.is_outgoing {
             (Color::Green, Color::White)
+        } else if is_new {
+            (Color::Yellow, Color::White)
         } else {
             (Color::Cyan, Color::Gray)
         };

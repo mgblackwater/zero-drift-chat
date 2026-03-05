@@ -1,4 +1,5 @@
 pub mod app_state;
+pub mod search;
 pub mod event;
 pub mod keybindings;
 pub mod osc8;

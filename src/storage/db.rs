@@ -80,6 +80,17 @@ impl Database {
             .conn
             .execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0", []);
 
+        // Migration: add is_newsletter column if not exists
+        let _ = self
+            .conn
+            .execute("ALTER TABLE chats ADD COLUMN is_newsletter INTEGER NOT NULL DEFAULT 0", []);
+
+        // Backfill is_newsletter for chats already in DB whose id contains @newsletter
+        let _ = self.conn.execute(
+            "UPDATE chats SET is_newsletter = 1 WHERE id LIKE '%@newsletter%' AND is_newsletter = 0",
+            [],
+        );
+
         Ok(())
     }
 }

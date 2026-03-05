@@ -16,10 +16,11 @@ use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SettingsKey, SettingsValue};
+use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SearchState, SettingsKey, SettingsValue};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
+use crate::tui::search::top_fuzzy_matches;
 use crate::tui;
 
 pub struct App {
@@ -303,6 +304,18 @@ impl App {
                     tracing::info!("QR code received for WhatsApp pairing");
                     self.state.qr_code = Some(code);
                 }
+                ProviderEvent::SelfRead { chat_id } => {
+                    if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                        if chat.unread_count > 0 {
+                            chat.unread_count = 0;
+                            let _ = self.db.update_unread_count(&chat.id, 0);
+                        }
+                    }
+                    if self.state.selected_chat_id().map(|id| id == chat_id).unwrap_or(false) {
+                        self.state.new_message_count = 0;
+                    }
+                    self.refresh_title();
+                }
                 ProviderEvent::SyncCompleted => {
                     tracing::info!("Sync completed, refreshing current chat");
                     self.load_selected_chat_messages();
@@ -323,6 +336,7 @@ impl App {
             Action::NextChat => {
                 self.state.select_next_chat();
                 self.load_selected_chat_messages();
+                self.capture_new_message_count();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
                 self.refresh_title();
@@ -330,6 +344,7 @@ impl App {
             Action::PrevChat => {
                 self.state.select_prev_chat();
                 self.load_selected_chat_messages();
+                self.capture_new_message_count();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
                 self.refresh_title();
@@ -502,6 +517,54 @@ impl App {
             Action::ChatMenuClose => {
                 self.state.close_chat_menu();
             }
+            Action::OpenSearch => {
+                self.state.search_state = Some(SearchState::new());
+                self.state.input_mode = InputMode::Searching;
+            }
+            Action::SearchClose => {
+                self.state.search_state = None;
+                self.state.input_mode = InputMode::Normal;
+            }
+            Action::SearchInput(key) => {
+                use crossterm::event::KeyCode;
+                if let Some(ref mut ss) = self.state.search_state {
+                    match key.code {
+                        KeyCode::Backspace => { ss.query.pop(); }
+                        KeyCode::Char(c) => { ss.query.push(c); }
+                        _ => {}
+                    }
+                    ss.results = top_fuzzy_matches(&ss.query, &self.state.chats, 5);
+                    ss.selected = ss.selected.min(ss.results.len().saturating_sub(1));
+                }
+            }
+            Action::SearchNext => {
+                if let Some(ref mut ss) = self.state.search_state {
+                    if !ss.results.is_empty() {
+                        ss.selected = (ss.selected + 1) % ss.results.len();
+                    }
+                }
+            }
+            Action::SearchPrev => {
+                if let Some(ref mut ss) = self.state.search_state {
+                    if !ss.results.is_empty() {
+                        ss.selected = ss.selected.checked_sub(1).unwrap_or(ss.results.len() - 1);
+                    }
+                }
+            }
+            Action::SearchConfirm => {
+                let chat_idx = self.state.search_state.as_ref()
+                    .and_then(|ss| ss.results.get(ss.selected).copied());
+                if let Some(idx) = chat_idx {
+                    self.state.search_state = None;
+                    self.state.enter_editing();
+                    self.state.chat_list_state.select(Some(idx));
+                    self.load_selected_chat_messages();
+                    self.capture_new_message_count();
+                    self.clear_selected_unread();
+                    self.send_read_receipts().await;
+                    self.refresh_title();
+                }
+            }
             Action::None => {}
         }
     }
@@ -547,6 +610,16 @@ impl App {
                 tracing::error!("Failed to send read receipts: {}", e);
             }
         }
+    }
+
+    fn capture_new_message_count(&mut self) {
+        self.state.new_message_count = self
+            .state
+            .chat_list_state
+            .selected()
+            .and_then(|i| self.state.chats.get(i))
+            .map(|c| c.unread_count as usize)
+            .unwrap_or(0);
     }
 
     fn clear_selected_unread(&mut self) {

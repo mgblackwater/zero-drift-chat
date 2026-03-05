@@ -47,6 +47,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         &state.chats,
         &mut state.chat_list_state,
         state.active_panel,
+        state.input_mode,
     );
 
     message_view::render_message_view(
@@ -56,6 +57,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         chat_name,
         state.scroll_offset,
         state.active_panel,
+        state.new_message_count,
     );
 
     input_bar::render_input_bar(
@@ -88,6 +90,13 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     if state.input_mode == InputMode::ChatMenu {
         if let Some(ref menu_state) = state.chat_menu_state {
             widgets::chat_menu::render_chat_menu(f, chat_list_area, menu_state);
+        }
+    }
+
+    // Render search overlay on top if active
+    if state.input_mode == InputMode::Searching {
+        if let Some(ref search) = state.search_state {
+            widgets::search_overlay::render_search_overlay(f, chat_list_area, search, &state.chats);
         }
     }
 }

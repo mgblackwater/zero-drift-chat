@@ -15,6 +15,7 @@ pub enum ProviderEvent {
     AuthStatusChanged(Platform, AuthStatus),
     AuthQrCode(String),
     SyncCompleted,
+    SelfRead { chat_id: String },
 }
 
 #[async_trait]

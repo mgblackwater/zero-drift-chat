@@ -29,6 +29,12 @@ pub enum Action {
     ChatMenuPrev,
     ChatMenuConfirm,
     ChatMenuClose,
+    OpenSearch,
+    SearchInput(KeyEvent),
+    SearchNext,
+    SearchPrev,
+    SearchConfirm,
+    SearchClose,
     None,
 }
 
@@ -39,6 +45,7 @@ pub fn map_key(key: KeyEvent, mode: InputMode, enter_sends: bool) -> Action {
         InputMode::Settings => map_settings_mode(key),
         InputMode::Renaming => map_renaming_mode(key),
         InputMode::ChatMenu => map_chat_menu_mode(key),
+        InputMode::Searching => map_search_mode(key),
     }
 }
 
@@ -53,6 +60,7 @@ fn map_normal_mode(key: KeyEvent) -> Action {
         KeyCode::Char('s') => Action::OpenSettings,
         KeyCode::Char('r') => Action::RenameChat,
         KeyCode::Char('x') => Action::OpenChatMenu,
+        KeyCode::Char('/') => Action::OpenSearch,
         KeyCode::PageUp => Action::ScrollUp,
         KeyCode::PageDown => Action::ScrollDown,
         _ => Action::None,
@@ -106,6 +114,16 @@ fn map_chat_menu_mode(key: KeyEvent) -> Action {
         KeyCode::Enter | KeyCode::Char('p') => Action::ChatMenuConfirm,
         KeyCode::Esc | KeyCode::Char('q') => Action::ChatMenuClose,
         _ => Action::None,
+    }
+}
+
+fn map_search_mode(key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => Action::SearchClose,
+        KeyCode::Enter => Action::SearchConfirm,
+        KeyCode::Char('j') | KeyCode::Down => Action::SearchNext,
+        KeyCode::Char('k') | KeyCode::Up => Action::SearchPrev,
+        _ => Action::SearchInput(key),
     }
 }
 

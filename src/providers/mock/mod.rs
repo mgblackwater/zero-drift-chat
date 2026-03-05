@@ -15,11 +15,14 @@ const CHAT_NAMES: &[&str] = &[
     "Bob Smith",
     "Team Standup",
     "Eve Martinez",
-    "Charlie & Dave",
+    "Tech Weekly",
     "Project Alpha",
     "Mom",
     "Jane Doe",
 ];
+
+/// Indices into CHAT_NAMES that are newsletters
+const NEWSLETTER_INDICES: &[usize] = &[4]; // "Tech Weekly"
 
 const MOCK_MESSAGES: &[&str] = &[
     "Hey, how's it going?",
@@ -33,7 +36,7 @@ const MOCK_MESSAGES: &[&str] = &[
     "I'll send you the details",
     "Thanks for the help!",
     "Running a bit late",
-    "Check out this article I found",
+    "Check out this article I found: https://example.com/article",
     "Good morning everyone!",
     "The build is green now",
     "Happy Friday!",
@@ -77,8 +80,9 @@ impl MockProvider {
                 display_name: None,
                 last_message: None,
                 unread_count: 0,
-                is_group: i == 2 || i == 4, // "Team Standup" and "Charlie & Dave"
+                is_group: i == 2, // "Team Standup"
                 is_pinned: false,
+                is_newsletter: NEWSLETTER_INDICES.contains(&i),
             })
             .collect()
     }
