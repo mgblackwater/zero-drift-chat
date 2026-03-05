@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, block::Title},
     Frame,
 };
 
@@ -29,20 +29,24 @@ pub fn render_search_overlay(
 
     f.render_widget(Clear, popup_area);
 
+    let title = Title::from(Line::from(vec![
+        Span::styled(" / ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        Span::styled("Find Chat ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ]));
     let block = Block::default()
-        .title(" Find Chat ")
+        .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Blue));
+        .border_style(Style::default().fg(Color::Cyan));
     let inner = block.inner(popup_area);
     f.render_widget(block, popup_area);
 
     // Query line
     let query_area = Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 };
-    f.render_widget(
-        Paragraph::new(format!("/ {}▌", state.query))
-            .style(Style::default().fg(Color::White)),
-        query_area,
-    );
+    let query_line = Line::from(vec![
+        Span::styled("/ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{}▌", state.query), Style::default().fg(Color::White)),
+    ]);
+    f.render_widget(Paragraph::new(query_line), query_area);
 
     if result_count == 0 {
         return;
@@ -65,8 +69,8 @@ pub fn render_search_overlay(
     };
 
     let highlight = Style::default()
-        .bg(Color::Blue)
-        .fg(Color::White)
+        .bg(Color::Cyan)
+        .fg(Color::Black)
         .add_modifier(Modifier::BOLD);
 
     let items: Vec<ListItem> = state

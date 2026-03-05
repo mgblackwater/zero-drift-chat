@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -14,17 +14,18 @@ pub fn render_input_bar(
     textarea: &TextArea<'static>,
     mode: InputMode,
 ) {
-    let (mode_tag, border_color) = match mode {
-        InputMode::Normal => ("NORMAL", Color::DarkGray),
-        InputMode::Editing => ("INSERT", Color::Yellow),
-        InputMode::Settings => ("SETTINGS", Color::Cyan),
-        InputMode::Renaming => ("RENAME", Color::Magenta),
-        InputMode::ChatMenu => ("MENU", Color::Yellow),
-        InputMode::Searching => ("SEARCH", Color::Blue),
+    let (mode_tag, border_color, title_align) = match mode {
+        InputMode::Normal   => ("NORMAL",   Color::DarkGray, Alignment::Left),
+        InputMode::Editing  => ("✏  INSERT", Color::Yellow,   Alignment::Center),
+        InputMode::Settings => ("SETTINGS", Color::Cyan,     Alignment::Left),
+        InputMode::Renaming => ("RENAME",   Color::Magenta,  Alignment::Left),
+        InputMode::ChatMenu => ("MENU",     Color::Yellow,   Alignment::Left),
+        InputMode::Searching => ("SEARCH",  Color::Cyan,     Alignment::Left),
     };
 
     let block = Block::default()
-        .title(format!(" [{}] ", mode_tag))
+        .title(format!(" {} ", mode_tag))
+        .title_alignment(title_align)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
 

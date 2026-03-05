@@ -47,6 +47,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         &state.chats,
         &mut state.chat_list_state,
         state.active_panel,
+        state.input_mode,
     );
 
     message_view::render_message_view(

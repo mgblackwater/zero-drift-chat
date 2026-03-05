@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -31,34 +31,37 @@ pub fn render_status_bar(
         InputMode::Searching => "Type to filter | j/k:Navigate | Enter:Open+Insert | Esc:Cancel",
     };
 
-    let mut spans = Vec::new();
+    // Mode pill: colored badge on the left, rest of bar stays on black
+    let (pill_label, pill_bg, pill_fg) = match mode {
+        InputMode::Normal   => (" NORMAL ",  Color::DarkGray, Color::Black),
+        InputMode::Editing  => (" ✏ INSERT ", Color::Yellow,   Color::Black),
+        InputMode::Settings => (" SETTINGS ", Color::Cyan,    Color::Black),
+        InputMode::Renaming => (" RENAME ",  Color::Magenta,  Color::Black),
+        InputMode::ChatMenu => (" MENU ",    Color::Yellow,   Color::Black),
+        InputMode::Searching => (" SEARCH ", Color::Cyan,     Color::Black),
+    };
 
-    // Version
-    spans.push(Span::styled(
-        format!(" v{} ", env!("CARGO_PKG_VERSION")),
-        Style::default().fg(Color::DarkGray),
-    ));
-    spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+    let sep = Style::default().fg(Color::DarkGray);
+
+    let mut spans = vec![
+        Span::styled(pill_label, Style::default().bg(pill_bg).fg(pill_fg).add_modifier(Modifier::BOLD)),
+        Span::styled(" │ ", sep),
+        Span::styled(format!("v{} ", env!("CARGO_PKG_VERSION")), Style::default().fg(Color::DarkGray)),
+        Span::styled(" │ ", sep),
+    ];
 
     if mock_enabled {
         spans.push(Span::styled(" ● ", Style::default().fg(Color::Green)));
         spans.push(Span::styled("Mock", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(" │ ", sep));
     }
 
-    // WhatsApp status indicator
-    let wa_color = if whatsapp_connected {
-        Color::Green
-    } else {
-        Color::Red
-    };
+    let wa_color = if whatsapp_connected { Color::Green } else { Color::Red };
     spans.push(Span::styled(" ● ", Style::default().fg(wa_color)));
     spans.push(Span::styled("WA", Style::default().fg(Color::DarkGray)));
-
-    spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+    spans.push(Span::styled(" │ ", sep));
     spans.push(Span::styled(hints, Style::default().fg(Color::DarkGray)));
 
-    let line = Line::from(spans);
-    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Black));
+    let paragraph = Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Black));
     f.render_widget(paragraph, area);
 }

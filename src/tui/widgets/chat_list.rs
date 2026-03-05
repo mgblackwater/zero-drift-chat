@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState},
@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::core::types::UnifiedChat;
-use crate::tui::app_state::ActivePanel;
+use crate::tui::app_state::{ActivePanel, InputMode};
 
 fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
     let tag = format!("[{}]", chat.platform);
@@ -41,6 +41,7 @@ pub fn render_chat_list(
     chats: &[UnifiedChat],
     list_state: &mut ListState,
     active_panel: ActivePanel,
+    input_mode: InputMode,
 ) {
     let border_color = if active_panel == ActivePanel::ChatList {
         Color::Cyan
@@ -48,18 +49,30 @@ pub fn render_chat_list(
         Color::DarkGray
     };
 
-    let total_unread: u32 = chats
-        .iter()
-        .filter(|c| !c.is_newsletter)
-        .map(|c| c.unread_count)
-        .sum();
-    let title = if total_unread > 0 {
-        format!(" Chats ({}) ", total_unread)
+    let (title, title_alignment) = if input_mode == InputMode::Editing {
+        let chat_name = list_state
+            .selected()
+            .and_then(|i| chats.get(i))
+            .map(|c| c.display_name.as_deref().unwrap_or(&c.name))
+            .unwrap_or("—");
+        (format!(" ✏  {} ", chat_name), Alignment::Center)
     } else {
-        " Chats ".to_string()
+        let total_unread: u32 = chats
+            .iter()
+            .filter(|c| !c.is_newsletter)
+            .map(|c| c.unread_count)
+            .sum();
+        let t = if total_unread > 0 {
+            format!(" Chats ({}) ", total_unread)
+        } else {
+            " Chats ".to_string()
+        };
+        (t, Alignment::Left)
     };
+
     let block = Block::default()
         .title(title)
+        .title_alignment(title_alignment)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
     let inner = block.inner(area);
@@ -68,7 +81,7 @@ pub fn render_chat_list(
     let selected = list_state.selected().unwrap_or(0);
     let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
 
-    let highlight = Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let highlight = Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD);
 
     if pinned_count == 0 {
         // No pinned chats — plain scrollable list

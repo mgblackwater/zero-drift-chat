@@ -289,6 +289,10 @@ fn handle_wa_event(
                     status,
                 });
             }
+            if type_str == "ReadSelf" {
+                let chat_id = jid_to_chat_id(&receipt.source.chat, jid_cache);
+                let _ = tx.send(ProviderEvent::SelfRead { chat_id });
+            }
         }
         Event::JoinedGroup(lazy_conv) => {
             if let Some(conv) = lazy_conv.get() {
