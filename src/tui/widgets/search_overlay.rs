@@ -73,21 +73,23 @@ pub fn render_search_overlay(
         .results
         .iter()
         .enumerate()
-        .map(|(pos, &idx)| {
-            let chat = &chats[idx];
+        .take(result_count)
+        .filter_map(|(pos, &idx)| {
+            let chat = chats.get(idx)?;
             let name = chat.display_name.as_deref().unwrap_or(&chat.name);
             let selector = if pos == state.selected { "▶ " } else { "  " };
             let tag = format!("[{}] ", chat.platform);
-            ListItem::new(Line::from(vec![
+            Some(ListItem::new(Line::from(vec![
                 Span::raw(selector),
                 Span::styled(tag, Style::default().fg(Color::DarkGray)),
                 Span::styled(name.to_string(), Style::default().fg(Color::White)),
-            ]))
+            ])))
         })
         .collect();
 
     let mut list_state = ListState::default();
-    list_state.select(Some(state.selected));
+    let clamped_selected = state.selected.min(items.len().saturating_sub(1));
+    list_state.select(Some(clamped_selected));
     f.render_stateful_widget(
         List::new(items).highlight_style(highlight),
         results_area,
