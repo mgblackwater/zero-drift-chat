@@ -4,6 +4,10 @@
 
 - Newsletter chats (`@newsletter` JIDs) now show a `[NL]` tag and are excluded from the unread count header
 - New messages are highlighted in yellow with a full-width `─── N new ───` separator when navigating to a chat
+- Reading messages on another device (phone/web) now clears the unread count and `─── N new ───` separator via `ReadSelf` receipts
+- Selected chat row now uses blue background with white text for clearer focus indication
+- Press `/` to open a fuzzy chat search popup — type to filter, top 5 results shown, `j`/`k` to navigate, `Enter` to jump to chat and enter insert mode, `Esc` to cancel
+- INSERT mode is now clearly indicated across the UI: mode pill badge in the status bar (`✏ INSERT` in yellow), centered label on the input box border, and the chat list header shows the current chat name
 
 ## v0.3.0 — 2026-03-04
 
