@@ -11,6 +11,7 @@ pub enum InputMode {
     Settings,
     Renaming,
     ChatMenu,
+    Searching,
 }
 
 // --- Settings overlay types ---
@@ -176,6 +177,18 @@ impl ChatMenuState {
     }
 }
 
+pub struct SearchState {
+    pub query: String,
+    pub results: Vec<usize>,  // indices into AppState::chats (top 5)
+    pub selected: usize,      // currently highlighted result index
+}
+
+impl SearchState {
+    pub fn new() -> Self {
+        Self { query: String::new(), results: vec![], selected: 0 }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivePanel {
     ChatList,
@@ -196,6 +209,7 @@ pub struct AppState {
     pub mock_enabled: bool,
     pub settings_state: Option<SettingsState>,
     pub chat_menu_state: Option<ChatMenuState>,
+    pub search_state: Option<SearchState>,
     pub enter_sends: bool,
     /// Number of unread messages at the tail of `messages` when a chat was opened.
     pub new_message_count: usize,
@@ -220,6 +234,7 @@ impl AppState {
             mock_enabled: false,
             settings_state: None,
             chat_menu_state: None,
+            search_state: None,
             enter_sends: true,
             new_message_count: 0,
         }

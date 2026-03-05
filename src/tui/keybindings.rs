@@ -39,6 +39,7 @@ pub fn map_key(key: KeyEvent, mode: InputMode, enter_sends: bool) -> Action {
         InputMode::Settings => map_settings_mode(key),
         InputMode::Renaming => map_renaming_mode(key),
         InputMode::ChatMenu => map_chat_menu_mode(key),
+        InputMode::Searching => Action::None,
     }
 }
 
