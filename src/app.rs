@@ -556,7 +556,7 @@ impl App {
                     .and_then(|ss| ss.results.get(ss.selected).copied());
                 if let Some(idx) = chat_idx {
                     self.state.search_state = None;
-                    self.state.input_mode = InputMode::Editing;
+                    self.state.enter_editing();
                     self.state.chat_list_state.select(Some(idx));
                     self.load_selected_chat_messages();
                     self.capture_new_message_count();
