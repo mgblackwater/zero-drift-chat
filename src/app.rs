@@ -323,6 +323,7 @@ impl App {
             Action::NextChat => {
                 self.state.select_next_chat();
                 self.load_selected_chat_messages();
+                self.capture_new_message_count();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
                 self.refresh_title();
@@ -330,6 +331,7 @@ impl App {
             Action::PrevChat => {
                 self.state.select_prev_chat();
                 self.load_selected_chat_messages();
+                self.capture_new_message_count();
                 self.clear_selected_unread();
                 self.send_read_receipts().await;
                 self.refresh_title();
@@ -547,6 +549,16 @@ impl App {
                 tracing::error!("Failed to send read receipts: {}", e);
             }
         }
+    }
+
+    fn capture_new_message_count(&mut self) {
+        self.state.new_message_count = self
+            .state
+            .chat_list_state
+            .selected()
+            .and_then(|i| self.state.chats.get(i))
+            .map(|c| c.unread_count as usize)
+            .unwrap_or(0);
     }
 
     fn clear_selected_unread(&mut self) {

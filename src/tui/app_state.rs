@@ -197,6 +197,8 @@ pub struct AppState {
     pub settings_state: Option<SettingsState>,
     pub chat_menu_state: Option<ChatMenuState>,
     pub enter_sends: bool,
+    /// Number of unread messages at the tail of `messages` when a chat was opened.
+    pub new_message_count: usize,
 }
 
 impl AppState {
@@ -219,6 +221,7 @@ impl AppState {
             settings_state: None,
             chat_menu_state: None,
             enter_sends: true,
+            new_message_count: 0,
         }
     }
 

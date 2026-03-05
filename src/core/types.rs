@@ -88,4 +88,5 @@ pub struct UnifiedChat {
     pub unread_count: u32,
     pub is_group: bool,
     pub is_pinned: bool,
+    pub is_newsletter: bool,
 }

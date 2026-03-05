@@ -242,13 +242,15 @@ fn handle_wa_event(
                 source.is_group,
                 jid_cache,
             ) {
+                let chat_jid_str = source.chat.to_string();
+                let is_newsletter = chat_jid_str.contains("@newsletter");
                 let chat_id = jid_to_chat_id(&source.chat, jid_cache);
 
                 // Determine chat name:
-                // - Groups: never use sender's push_name (that's a person, not the group)
+                // - Groups/newsletters: never use sender's push_name (that's a person, not the group)
                 // - 1:1 incoming: use push_name if available
                 // - Outgoing / fallback: use phone number from JID
-                let chat_name = if source.is_group {
+                let chat_name = if source.is_group || is_newsletter {
                     jid_to_display_name(&source.chat)
                 } else if source.is_from_me {
                     jid_to_display_name(&source.chat)
@@ -268,6 +270,7 @@ fn handle_wa_event(
                     unread_count: if unified.is_outgoing { 0 } else { 1 },
                     is_group: source.is_group,
                     is_pinned: false,
+                    is_newsletter,
                 };
 
                 let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));
@@ -308,6 +311,7 @@ fn handle_wa_event(
                 if let Ok(jid) = jid_str.parse::<Jid>() {
                     let chat_id = jid_to_chat_id(&jid, jid_cache);
                     let is_group = jid_str.contains("@g.us");
+                    let is_newsletter = jid_str.contains("@newsletter");
 
                     let name = if is_group {
                         conv.name
@@ -341,6 +345,7 @@ fn handle_wa_event(
                         unread_count: conv.unread_count.unwrap_or(0),
                         is_group,
                         is_pinned: false,
+                        is_newsletter,
                     };
 
                     let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));

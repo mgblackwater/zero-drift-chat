@@ -56,6 +56,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         chat_name,
         state.scroll_offset,
         state.active_panel,
+        state.new_message_count,
     );
 
     input_bar::render_input_bar(

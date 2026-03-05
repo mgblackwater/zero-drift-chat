@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.3.1 — 2026-03-05
+
+- Newsletter chats (`@newsletter` JIDs) now show a `[NL]` tag and are excluded from the unread count header
+- New messages are highlighted in yellow with a full-width `─── N new ───` separator when navigating to a chat
+
 ## v0.3.0 — 2026-03-04
 
 ### Address Book Separation

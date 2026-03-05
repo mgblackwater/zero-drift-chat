@@ -8,8 +8,22 @@ permissions:
   contents: write
 
 jobs:
+  version-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Cargo.toml version matches CHANGELOG
+        run: |
+          CARGO_VER=$(grep '^version' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          if ! grep -q "## v$CARGO_VER" CHANGELOG.md; then
+            echo "ERROR: Cargo.toml version $CARGO_VER not found in CHANGELOG.md"
+            exit 1
+          fi
+          echo "OK: v$CARGO_VER found in CHANGELOG.md"
+
   version:
     runs-on: ubuntu-latest
+    needs: version-check
     outputs:
       tag: ${{ steps.compute.outputs.tag }}
       cargo_version: ${{ steps.compute.outputs.cargo_version }}

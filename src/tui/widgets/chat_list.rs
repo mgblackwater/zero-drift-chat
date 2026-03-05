@@ -20,14 +20,19 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
     // Embed selector so column layout is always consistent regardless of which list is active
     let selector = if is_selected { "▶ " } else { "  " };
     let pin_tag = if chat.is_pinned { "* " } else { "  " };
-    ListItem::new(Line::from(vec![
+    let mut spans = vec![
         Span::raw(selector),
         Span::styled(pin_tag.to_string(), Style::default().fg(Color::Yellow)),
-        Span::styled(tag, Style::default().fg(Color::DarkGray)),
-        Span::raw(" "),
-        Span::styled(name, Style::default().fg(Color::White)),
-        Span::styled(unread, Style::default().fg(Color::Yellow)),
-    ]))
+    ];
+    if chat.is_newsletter {
+        spans.push(Span::styled("[NL]", Style::default().fg(Color::Cyan)));
+    } else {
+        spans.push(Span::styled(tag, Style::default().fg(Color::DarkGray)));
+    }
+    spans.push(Span::raw(" "));
+    spans.push(Span::styled(name, Style::default().fg(Color::White)));
+    spans.push(Span::styled(unread, Style::default().fg(Color::Yellow)));
+    ListItem::new(Line::from(spans))
 }
 
 pub fn render_chat_list(
@@ -43,8 +48,18 @@ pub fn render_chat_list(
         Color::DarkGray
     };
 
+    let total_unread: u32 = chats
+        .iter()
+        .filter(|c| !c.is_newsletter)
+        .map(|c| c.unread_count)
+        .sum();
+    let title = if total_unread > 0 {
+        format!(" Chats ({}) ", total_unread)
+    } else {
+        " Chats ".to_string()
+    };
     let block = Block::default()
-        .title(" Chats ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
     let inner = block.inner(area);
