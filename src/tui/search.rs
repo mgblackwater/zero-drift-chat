@@ -7,20 +7,19 @@ pub fn fuzzy_score(query: &str, text: &str) -> Option<usize> {
     if query.is_empty() {
         return Some(0);
     }
-    let query_chars: Vec<char> = query.to_lowercase().chars().collect();
-    let text_chars: Vec<char> = text.to_lowercase().chars().collect();
+    let query_chars: Vec<char> = query.chars().collect();
     let mut qi = 0;
     let mut first_match: Option<usize> = None;
     let mut last_match = 0;
-    for (ti, &tc) in text_chars.iter().enumerate() {
-        if tc == query_chars[qi] {
+    for (ti, tc) in text.chars().enumerate() {
+        if tc.eq_ignore_ascii_case(&query_chars[qi]) {
             if first_match.is_none() {
                 first_match = Some(ti);
             }
             last_match = ti;
             qi += 1;
             if qi == query_chars.len() {
-                return Some(last_match - first_match.unwrap());
+                return Some(last_match - first_match.unwrap() + 1);
             }
         }
     }
@@ -51,13 +50,13 @@ mod tests {
 
     #[test]
     fn test_fuzzy_score_exact() {
-        assert_eq!(fuzzy_score("xin", "xin wei"), Some(2));
+        assert_eq!(fuzzy_score("xin", "xin wei"), Some(3));
     }
 
     #[test]
     fn test_fuzzy_score_scattered() {
-        // 'x' at 0, 'w' at 4 → span 4
-        assert_eq!(fuzzy_score("xw", "xin wei"), Some(4));
+        // 'x' at 0, 'w' at 4 → span = 4 - 0 + 1 = 5
+        assert_eq!(fuzzy_score("xw", "xin wei"), Some(5));
     }
 
     #[test]
@@ -72,7 +71,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_score_case_insensitive() {
-        assert_eq!(fuzzy_score("XIN", "xin wei"), Some(2));
+        assert_eq!(fuzzy_score("XIN", "xin wei"), Some(3));
     }
 
     #[test]
@@ -93,6 +92,8 @@ mod tests {
         ];
         let results = top_fuzzy_matches("al", &chats, 5);
         assert_eq!(results.len(), 5);
+        assert!(results.iter().all(|&i| i < 6));
+        assert!(!results.contains(&5));
     }
 
     #[test]
