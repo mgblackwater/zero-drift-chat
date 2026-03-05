@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>zero-drift-chat — unified messaging from your terminal</title>
+<meta name="description" content="A terminal-native unified messaging client. WhatsApp, more platforms coming. No distractions. No mouse. No nonsense.">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d1117;
+  --bg-lighter: #161b22;
+  --bg-card: #1c2128;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --green: #00ff41;
+  --cyan: #00bcd4;
+  --yellow: #e3b341;
+  --red: #f85149;
+  --orange: #d29922;
+  --blue: #58a6ff;
+  --magenta: #bc8cff;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, 'Courier New', monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* Terminal window frame */
+.terminal-window {
+  max-width: 920px;
+  margin: 24px auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.terminal-titlebar {
+  background: var(--bg-lighter);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+.terminal-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.terminal-dot.red { background: #ff5f57; }
+.terminal-dot.yellow { background: #febc2e; }
+.terminal-dot.green { background: #28c840; }
+
+.terminal-title {
+  flex: 1;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.terminal-body {
+  padding: 32px 40px;
+}
+
+@media (max-width: 640px) {
+  .terminal-window { margin: 0; border-radius: 0; border: none; }
+  .terminal-body { padding: 24px 16px; }
+}
+
+/* Section dividers */
+.section-divider {
+  color: var(--text-dim);
+  margin: 40px 0 32px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-divider::before,
+.section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ── Hero ── */
+.hero { text-align: center; padding: 24px 0 8px; }
+
+.hero-name {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: -1px;
+}
+
+.hero-tagline {
+  font-size: 16px;
+  color: var(--cyan);
+  margin-top: 8px;
+}
+
+.hero-philosophy {
+  color: var(--text-dim);
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+.hero-buttons {
+  margin-top: 24px;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  transition: border-color 0.2s, color 0.2s;
+}
+.btn:hover { border-color: var(--green); color: var(--green); }
+.btn-primary {
+  background: var(--green);
+  color: var(--bg);
+  border-color: var(--green);
+  font-weight: 700;
+}
+.btn-primary:hover { background: #00cc34; border-color: #00cc34; color: var(--bg); }
+
+/* ── Philosophy pillars ── */
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.pillar {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px;
+  background: var(--bg-card);
+  text-align: center;
+}
+
+.pillar-icon {
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+
+.pillar-title {
+  color: var(--green);
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.pillar-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ── TUI Mockups ── */
+.mockup-container { margin-top: 8px; }
+
+.mockup-label {
+  color: var(--cyan);
+  font-size: 12px;
+  margin-bottom: 4px;
+  margin-top: 20px;
+}
+.mockup-label:first-child { margin-top: 0; }
+
+.mockup {
+  background: var(--bg-lighter);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre;
+}
+
+.mockup .g { color: var(--green); }
+.mockup .c { color: var(--cyan); }
+.mockup .y { color: var(--yellow); }
+.mockup .r { color: var(--red); }
+.mockup .b { color: var(--blue); }
+.mockup .m { color: var(--magenta); }
+.mockup .d { color: var(--text-dim); }
+.mockup .o { color: var(--orange); }
+.mockup .inv { background: var(--green); color: var(--bg); }
+.mockup .inv-c { background: var(--cyan); color: var(--bg); }
+
+/* ── Features grid ── */
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.feature-card {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 16px;
+  background: var(--bg-card);
+}
+
+.feature-title {
+  color: var(--green);
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.feature-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ── Install section ── */
+.install-block { margin-top: 8px; }
+
+.install-label {
+  color: var(--cyan);
+  font-size: 12px;
+  margin-bottom: 4px;
+  margin-top: 16px;
+}
+.install-label:first-child { margin-top: 0; }
+
+.code-block {
+  background: var(--bg-lighter);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text);
+}
+
+.code-block .prompt { color: var(--green); user-select: none; }
+.code-block .comment { color: var(--text-dim); }
+
+.download-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.download-table th {
+  text-align: left;
+  color: var(--cyan);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  font-weight: 700;
+}
+.download-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.download-table a {
+  color: var(--green);
+  text-decoration: none;
+}
+.download-table a:hover { text-decoration: underline; }
+
+/* ── Keybindings ── */
+.keybind-section { margin-top: 20px; }
+.keybind-section:first-child { margin-top: 8px; }
+
+.keybind-mode {
+  color: var(--cyan);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.keybind-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.keybind-table td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.keybind-table td:first-child {
+  color: var(--green);
+  font-weight: 700;
+  white-space: nowrap;
+  width: 180px;
+}
+.keybind-table td:last-child {
+  color: var(--text-dim);
+}
+
+/* ── Tips ── */
+.tips-list {
+  list-style: none;
+  margin-top: 8px;
+}
+.tips-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+.tips-list li:last-child { border-bottom: none; }
+.tips-list .tip-label {
+  color: var(--yellow);
+  font-weight: 700;
+}
+.tips-list .warn-label {
+  color: var(--orange);
+  font-weight: 700;
+}
+
+/* ── Footer ── */
+.footer {
+  text-align: center;
+  padding: 24px 0 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.footer a {
+  color: var(--green);
+  text-decoration: none;
+}
+.footer a:hover { text-decoration: underline; }
+.footer-line { margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="terminal-window">
+  <div class="terminal-titlebar">
+    <span class="terminal-dot red"></span>
+    <span class="terminal-dot yellow"></span>
+    <span class="terminal-dot green"></span>
+    <span class="terminal-title">zero-drift-chat &mdash; bash</span>
+  </div>
+  <div class="terminal-body">
+
+    <!-- ═══ Hero ═══ -->
+    <section class="hero">
+      <div class="hero-name">zero-drift-chat</div>
+      <div class="hero-tagline">unified messaging from your terminal</div>
+      <div class="hero-philosophy">No distractions. No mouse. No nonsense.</div>
+      <div class="hero-buttons">
+        <a href="https://github.com/mgblackwater/zero-drift-chat/releases" class="btn btn-primary">Download</a>
+        <a href="https://github.com/mgblackwater/zero-drift-chat" class="btn">GitHub</a>
+        <a href="https://github.com/mgblackwater/zero-drift-chat/releases" class="btn">Releases</a>
+      </div>
+    </section>
+
+    <!-- ═══ Philosophy ═══ -->
+    <div class="section-divider">philosophy</div>
+    <section class="pillars">
+      <div class="pillar">
+        <div class="pillar-icon">~</div>
+        <div class="pillar-title">Distraction-free</div>
+        <div class="pillar-desc">No read receipts, no typing indicators, no notification spam</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon">hjkl</div>
+        <div class="pillar-title">Keyboard-only</div>
+        <div class="pillar-desc">Vim-style navigation, never touch the mouse</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon">&gt;_</div>
+        <div class="pillar-title">Terminal-native</div>
+        <div class="pillar-desc">Runs anywhere: SSH, tmux, your favorite terminal</div>
+      </div>
+      <div class="pillar">
+        <div class="pillar-icon">++</div>
+        <div class="pillar-title">Multi-platform</div>
+        <div class="pillar-desc">WhatsApp today, more platforms coming soon</div>
+      </div>
+    </section>
+
+    <!-- ═══ TUI Mockups ═══ -->
+    <div class="section-divider">what it looks like</div>
+    <section class="mockup-container">
+
+      <div class="mockup-label">~ main view</div>
+<pre class="mockup">
+<span class="inv">  zero-drift-chat v0.2.1                                                      </span>
+<span class="d">┌──────── Chats ────────┐┌─────────────────── Alice (WhatsApp) ───────────────┐</span>
+<span class="d">│</span> <span class="y">*</span> <span class="g">Alice (WhatsApp)</span> <span class="r">[2]</span> <span class="d">││</span> <span class="d">10:32</span>  <span class="c">Alice:</span> hey, are you coming tonight?        <span class="d">│</span>
+<span class="d">│</span>   <span class="g">Bob (WhatsApp)</span>       <span class="d">││</span> <span class="d">10:33</span>  <span class="g">You:</span> yeah, running a bit late though       <span class="d">│</span>
+<span class="d">│</span> <span class="y">*</span> Work Group   <span class="b">[wa]</span>   <span class="d">││</span> <span class="d">10:34</span>  <span class="c">Alice:</span> no worries, grab some snacks?        <span class="d">│</span>
+<span class="d">│</span>   Mock: General        <span class="d">││</span> <span class="d">10:35</span>  <span class="g">You:</span> sure, see you in 20                   <span class="d">│</span>
+<span class="d">│</span>   Mock: Random         <span class="d">││</span> <span class="d">10:41</span>  <span class="c">Alice:</span> check this out                      <span class="d">│</span>
+<span class="d">│</span>                        <span class="d">││</span> <span class="d">10:41</span>  <span class="c">Alice:</span> <span class="b">https://example.com/cool-thing</span>      <span class="d">│</span>
+<span class="d">│</span>                        <span class="d">││</span>                                                    <span class="d">│</span>
+<span class="d">│</span>                        <span class="d">│├────────────────────────────────────────────────────┤</span>
+<span class="d">│</span>                        <span class="d">││</span> <span class="g">&gt;</span> thanks, will check it later_                     <span class="d">│</span>
+<span class="d">└────────────────────────┘└────────────────────────────────────────────────────┘</span>
+<span class="d"> </span><span class="g">&#x25cf;</span><span class="d"> WhatsApp </span><span class="g">&#x25cf;</span><span class="d"> Mock                       NORMAL  j/k:nav  i:insert  ?:help</span>
+</pre>
+
+      <div class="mockup-label">~ settings overlay</div>
+<pre class="mockup">
+<span class="d">┌──────── Chats ────┐┌────────── Messages ──────────┐</span>
+<span class="d">│                    ││                              │</span>
+<span class="d">│                    ││  ┌──── Settings ──────────┐  │</span>
+<span class="d">│                    ││  │                        │  │</span>
+<span class="d">│                    ││  │  <span class="g">[x]</span> Show timestamps   │  │</span>
+<span class="d">│                    ││  │  <span class="g">[x]</span> 24-hour clock     │  │</span>
+<span class="d">│                    ││  │  <span class="d">[ ]</span> Compact mode      │  │</span>
+<span class="d">│                    ││  │  <span class="g">[x]</span> URL highlighting  │  │</span>
+<span class="d">│                    ││  │                        │  │</span>
+<span class="d">│                    ││  │  <span class="d">j/k: navigate</span>       │  │</span>
+<span class="d">│                    ││  │  <span class="d">Space: toggle</span>       │  │</span>
+<span class="d">│                    ││  │  <span class="d">Esc: close</span>          │  │</span>
+<span class="d">│                    ││  └────────────────────────┘  │</span>
+<span class="d">│                    ││                              │</span>
+<span class="d">└────────────────────┘└──────────────────────────────┘</span>
+</pre>
+
+      <div class="mockup-label">~ whatsapp qr pairing</div>
+<pre class="mockup">
+<span class="d">┌──────── Chats ────┐┌────────── Messages ──────────┐</span>
+<span class="d">│                    ││                              │</span>
+<span class="d">│                    ││  ┌── WhatsApp Pairing ───┐  │</span>
+<span class="d">│                    ││  │                        │  │</span>
+<span class="d">│                    ││  │    <span class="g">  ██ ██ ████ ██</span>    │  │</span>
+<span class="d">│                    ││  │    <span class="g">  ██    ██   ██</span>    │  │</span>
+<span class="d">│                    ││  │    <span class="g">  ████ ██ ██  █</span>    │  │</span>
+<span class="d">│                    ││  │    <span class="g">  █  ███ ██ ███</span>    │  │</span>
+<span class="d">│                    ││  │    <span class="g">  ██ █████ ████</span>    │  │</span>
+<span class="d">│                    ││  │                        │  │</span>
+<span class="d">│                    ││  │  <span class="c">Scan with WhatsApp</span>   │  │</span>
+<span class="d">│                    ││  │  <span class="d">Linked Devices &gt; +</span>  │  │</span>
+<span class="d">│                    ││  │                        │  │</span>
+<span class="d">│                    ││  └────────────────────────┘  │</span>
+<span class="d">│                    ││                              │</span>
+<span class="d">└────────────────────┘└──────────────────────────────┘</span>
+</pre>
+
+    </section>
+
+    <!-- ═══ Features ═══ -->
+    <div class="section-divider">features</div>
+    <section class="features-grid">
+      <div class="feature-card">
+        <div class="feature-title">WhatsApp Messaging</div>
+        <div class="feature-desc">Send and receive real WhatsApp messages through a pure-Rust implementation. No Electron, no browser, no overhead.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">QR Code Auth</div>
+        <div class="feature-desc">Scan a QR code right in your terminal to pair WhatsApp. Unicode half-block rendering, no external viewer needed.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">Message History</div>
+        <div class="feature-desc">Messages persist in a local SQLite database. Scroll back through history, even after restart.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">Vim Keybindings</div>
+        <div class="feature-desc">Navigate chats with j/k, enter insert mode with i, escape back to normal mode. Feels like home.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">Multi-line Input</div>
+        <div class="feature-desc">Compose longer messages with Alt+Enter line breaks. The input area grows to fit your message.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">Chat Management</div>
+        <div class="feature-desc">Rename chats for clarity, pin favorites to the top. Your chat list, organized your way.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">URL Highlighting</div>
+        <div class="feature-desc">Links in messages are automatically detected and highlighted. Copy them from your terminal as usual.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">In-App Settings</div>
+        <div class="feature-desc">Toggle timestamps, 24-hour clock, compact mode, and more without leaving the TUI.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">Smart Status Bar</div>
+        <div class="feature-desc">Per-provider connection status with colored dots. See at a glance what's connected.</div>
+      </div>
+      <div class="feature-card">
+        <div class="feature-title">SQLite Storage</div>
+        <div class="feature-desc">All data stored locally in ~/.zero-drift-chat/. No cloud, no sync service, your messages stay yours.</div>
+      </div>
+    </section>
+
+    <!-- ═══ Install ═══ -->
+    <div class="section-divider">install</div>
+    <section class="install-block">
+
+      <div class="install-label">~ linux / macOS (shell script)</div>
+<pre class="code-block"><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/mgblackwater/zero-drift-chat/master/install.sh | bash</pre>
+
+      <div class="install-label">~ windows (powershell)</div>
+<pre class="code-block"><span class="prompt">PS&gt; </span>irm https://raw.githubusercontent.com/mgblackwater/zero-drift-chat/master/install.ps1 | iex</pre>
+
+      <div class="install-label">~ build from source</div>
+<pre class="code-block"><span class="prompt">$ </span>git clone https://github.com/mgblackwater/zero-drift-chat.git
+<span class="prompt">$ </span>cd zero-drift-chat
+<span class="prompt">$ </span>cargo build --release
+<span class="comment"># binary at target/release/zero-drift-chat</span></pre>
+
+      <div class="install-label">~ pre-built binaries</div>
+      <table class="download-table">
+        <thead>
+          <tr>
+            <th>Platform</th>
+            <th>Architecture</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Linux</td>
+            <td>x86_64</td>
+            <td><a href="https://github.com/mgblackwater/zero-drift-chat/releases">Releases page</a></td>
+          </tr>
+          <tr>
+            <td>macOS</td>
+            <td>x86_64 / ARM64</td>
+            <td><a href="https://github.com/mgblackwater/zero-drift-chat/releases">Releases page</a></td>
+          </tr>
+          <tr>
+            <td>Windows</td>
+            <td>x86_64</td>
+            <td><a href="https://github.com/mgblackwater/zero-drift-chat/releases">Releases page</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ═══ Keybindings ═══ -->
+    <div class="section-divider">keybindings</div>
+    <section>
+
+      <div class="keybind-section">
+        <div class="keybind-mode">~ normal mode</div>
+        <table class="keybind-table">
+          <tr><td>j / k</td><td>Move down / up in chat list</td></tr>
+          <tr><td>Enter</td><td>Open selected chat</td></tr>
+          <tr><td>i</td><td>Enter insert mode (type a message)</td></tr>
+          <tr><td>G / g g</td><td>Jump to bottom / top of messages</td></tr>
+          <tr><td>Ctrl+u / Ctrl+d</td><td>Scroll messages up / down (half page)</td></tr>
+          <tr><td>r</td><td>Rename selected chat</td></tr>
+          <tr><td>p</td><td>Pin / unpin selected chat</td></tr>
+          <tr><td>s</td><td>Open settings</td></tr>
+          <tr><td>?</td><td>Show help</td></tr>
+          <tr><td>q</td><td>Quit</td></tr>
+        </table>
+      </div>
+
+      <div class="keybind-section">
+        <div class="keybind-mode">~ insert mode</div>
+        <table class="keybind-table">
+          <tr><td>Enter</td><td>Send message</td></tr>
+          <tr><td>Alt+Enter</td><td>New line (multi-line input)</td></tr>
+          <tr><td>Esc</td><td>Back to normal mode</td></tr>
+        </table>
+      </div>
+
+      <div class="keybind-section">
+        <div class="keybind-mode">~ settings overlay</div>
+        <table class="keybind-table">
+          <tr><td>j / k</td><td>Navigate settings</td></tr>
+          <tr><td>Space</td><td>Toggle selected option</td></tr>
+          <tr><td>Esc</td><td>Close settings</td></tr>
+        </table>
+      </div>
+
+    </section>
+
+    <!-- ═══ Tips & Limitations ═══ -->
+    <div class="section-divider">tips &amp; limitations</div>
+    <section>
+      <ul class="tips-list">
+        <li><span class="tip-label">QR scanning:</span> Make your terminal wide enough so the QR code renders cleanly. If your phone can't read it, try increasing font size temporarily.</li>
+        <li><span class="tip-label">Session persistence:</span> WhatsApp sessions are saved in <code>~/.zero-drift-chat/whatsapp-session.db</code>. You only need to scan the QR code once per device pairing.</li>
+        <li><span class="tip-label">Chat names:</span> WhatsApp chats appear with phone numbers by default. Use <code>r</code> in normal mode to rename them to something readable.</li>
+        <li><span class="tip-label">Pinning:</span> Press <code>p</code> to pin important chats to the top of the list. Pinned chats show a <code>*</code> marker.</li>
+        <li><span class="warn-label">Pairing issues:</span> If pairing fails, ensure your phone has an active internet connection and WhatsApp is up to date. Try quitting and restarting the app for a fresh QR code.</li>
+        <li><span class="warn-label">Nightly Rust:</span> Building from source requires the Rust nightly toolchain. The included <code>rust-toolchain.toml</code> handles this automatically.</li>
+      </ul>
+    </section>
+
+    <!-- ═══ Footer ═══ -->
+    <div class="section-divider"></div>
+    <footer class="footer">
+      <div><a href="https://github.com/mgblackwater/zero-drift-chat">github.com/mgblackwater/zero-drift-chat</a></div>
+      <div class="footer-line">MIT License &middot; Built with Rust + <a href="https://ratatui.rs">ratatui</a></div>
+      <div class="footer-line" style="margin-top: 12px; color: var(--green);">// for those who prefer their chat the way they prefer their code: in a terminal</div>
+    </footer>
+
+  </div>
+</div>
+
+</body>
+</html>
