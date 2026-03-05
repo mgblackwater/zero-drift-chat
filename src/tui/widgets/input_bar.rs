@@ -20,6 +20,7 @@ pub fn render_input_bar(
         InputMode::Settings => ("SETTINGS", Color::Cyan),
         InputMode::Renaming => ("RENAME", Color::Magenta),
         InputMode::ChatMenu => ("MENU", Color::Yellow),
+        InputMode::Searching => ("SEARCH", Color::Blue),
     };
 
     let block = Block::default()

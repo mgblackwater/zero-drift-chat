@@ -28,6 +28,7 @@ pub fn render_status_bar(
         InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
         InputMode::Renaming => "Enter:Confirm | Esc:Cancel | Type new name",
         InputMode::ChatMenu => "j/k:Navigate | p/Enter:Confirm | Esc:Close",
+        InputMode::Searching => "Type to filter | j/k:Navigate | Enter:Open+Insert | Esc:Cancel",
     };
 
     let mut spans = Vec::new();
