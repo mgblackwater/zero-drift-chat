@@ -177,6 +177,7 @@ impl ChatMenuState {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SearchState {
     pub query: String,
     pub results: Vec<usize>,  // indices into AppState::chats (top 5)
