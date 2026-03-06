@@ -1,9 +1,12 @@
 use crate::ai::providers::{ContextMessage, MessageRole};
 
 pub const SYSTEM_PROMPT: &str =
-    "You are a chat autocomplete assistant. Complete the user's message naturally \
-     based on the conversation context. Reply with ONLY the completion text — \
-     no explanation, no quotes, no prefix.";
+    "You predict the next few words to complete the sender's unfinished chat message. \
+     Look at their past messages (labeled [You]) to learn their writing style, tone, and vocabulary. \
+     Complete only their current partial message — do not write what the other person would say, \
+     do not start a new thought, do not add ideas they didn't begin. \
+     Reply with ONLY the short completion (a few words to finish the sentence they started). \
+     No explanation. No quotes. No punctuation prefix.";
 
 pub struct RawMessage {
     pub is_outgoing: bool,

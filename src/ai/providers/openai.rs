@@ -58,26 +58,34 @@ impl AiProvider for OpenAiClient {
             ChatMessage { role: "system".to_string(), content: req.system.clone() },
         ];
 
-        for ctx_msg in &req.context {
-            let role = match ctx_msg.role {
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-            };
+        // Build a single context block so the AI sees [You]/[Them] labels clearly
+        if !req.context.is_empty() {
+            let history: String = req.context.iter().map(|m| {
+                let label = match m.role {
+                    MessageRole::User => "[You]",
+                    MessageRole::Assistant => "[Them]",
+                };
+                format!("{}: {}", label, m.content)
+            }).collect::<Vec<_>>().join("\n");
             messages.push(ChatMessage {
-                role: role.to_string(),
-                content: ctx_msg.content.clone(),
+                role: "user".to_string(),
+                content: format!("Conversation history:\n{}", history),
+            });
+            messages.push(ChatMessage {
+                role: "assistant".to_string(),
+                content: "Understood. I'll complete messages in the sender's style.".to_string(),
             });
         }
 
         messages.push(ChatMessage {
             role: "user".to_string(),
-            content: format!("Complete this message (reply with ONLY the completion, nothing else): {}", req.partial_input),
+            content: format!("Complete only the end of this message I'm typing (a few words max): {}", req.partial_input),
         });
 
         let body = ChatRequest {
             model: req.model.clone(),
             messages,
-            max_tokens: 80,
+            max_tokens: 30,
             stream: false,
         };
 
