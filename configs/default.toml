@@ -17,11 +17,11 @@ enabled = true
 # phone_number = "+1234567890"
 
 [ai]
-enabled = false
-# provider = "ollama"          # ollama | openai | anthropic | gemini
-# base_url = "http://localhost:11434"
-# api_key = ""
-# model = "qwen2.5:1.5b-instruct"
-# context_messages = 10
-# summary_threshold = 50
-# debounce_ms = 500
+enabled = true
+provider = "ollama"
+base_url = "http://localhost:8080"
+model = "qwen2.5-1.5b-instruct-q4_k_m"
+context_messages = 10
+summary_threshold = 50
+debounce_ms = 500
+debug = true

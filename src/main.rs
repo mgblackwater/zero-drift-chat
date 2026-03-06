@@ -36,9 +36,18 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Load config
-    let config_path = cli
-        .config
-        .unwrap_or_else(|| PathBuf::from("configs/default.toml"));
+    let config_path = cli.config.unwrap_or_else(|| {
+        // Prefer repo-local config if running from the repo, otherwise use user config dir
+        let local = PathBuf::from("configs/default.toml");
+        if local.exists() {
+            local
+        } else {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".zero-drift-chat")
+                .join("config.toml")
+        }
+    });
     let config = AppConfig::load(&config_path)?;
 
     // Set up data directory
