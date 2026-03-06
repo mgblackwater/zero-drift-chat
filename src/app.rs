@@ -38,6 +38,8 @@ pub struct App {
     config_path: PathBuf,
     ai_worker: Option<AiWorker>,
     last_keystroke: Option<Instant>,
+    db_summary_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
+    db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
 }
 
 impl App {
@@ -59,6 +61,8 @@ impl App {
             None
         };
 
+        let (db_summary_tx, db_summary_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+
         Self {
             state: AppState::new(),
             router: MessageRouter::new(),
@@ -68,6 +72,8 @@ impl App {
             config_path,
             ai_worker,
             last_keystroke: None,
+            db_summary_tx,
+            db_summary_rx,
         }
     }
 
@@ -160,6 +166,10 @@ impl App {
                 }
                 Some(AppEvent::Tick) => {
                     self.handle_tick();
+                    // Save any pending AI summaries to DB
+                    while let Ok((key, value)) = self.db_summary_rx.try_recv() {
+                        let _ = self.db.set_preference(&key, &value);
+                    }
                     // AI debounce: fire request after user stops typing
                     if let Some(t) = self.last_keystroke {
                         let debounce = Duration::from_millis(self.config.ai.debounce_ms);
@@ -278,6 +288,26 @@ impl App {
                     if is_current_chat {
                         self.state.messages.push(msg.clone());
                         self.state.scroll_offset = 0; // auto-scroll to bottom
+
+                        if let Some(worker) = &self.ai_worker {
+                            if let Some(chat_id) = self.state.selected_chat_id() {
+                                let messages: Vec<crate::ai::context::RawMessage> = self.state.messages.iter()
+                                    .filter_map(|m| {
+                                        let text = match &m.content {
+                                            crate::core::types::MessageContent::Text(t) => t.clone(),
+                                            _ => return None,
+                                        };
+                                        Some(crate::ai::context::RawMessage { is_outgoing: m.is_outgoing, text })
+                                    })
+                                    .collect();
+                                worker.maybe_generate_summary(
+                                    chat_id.to_string(),
+                                    messages,
+                                    self.config.ai.summary_threshold,
+                                    self.db_summary_tx.clone(),
+                                );
+                            }
+                        }
                     }
 
                     // Move chat to top of list (like WhatsApp)

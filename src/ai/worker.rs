@@ -28,6 +28,56 @@ impl AiWorker {
         Self { provider, config, event_tx, cancel_token: None }
     }
 
+    /// If messages exceed the threshold, asynchronously generate a summary
+    /// and send the (key, value) pair to be stored in preferences DB.
+    pub fn maybe_generate_summary(
+        &self,
+        chat_id: String,
+        messages: Vec<crate::ai::context::RawMessage>,
+        threshold: usize,
+        db_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
+    ) {
+        if messages.len() < threshold {
+            return;
+        }
+
+        let provider = self.provider.clone_box();
+        let model = self.config.model.clone();
+
+        tokio::spawn(async move {
+            // Summarise the older portion (everything except the last threshold/2 messages)
+            let keep_recent = threshold / 2;
+            let older: Vec<String> = messages.iter()
+                .take(messages.len().saturating_sub(keep_recent))
+                .map(|m| m.to_chat_line_owned())
+                .collect();
+
+            if older.is_empty() {
+                return;
+            }
+
+            let prompt = format!(
+                "Summarise this conversation in 2-3 sentences:\n\n{}",
+                older.join("\n")
+            );
+
+            let req = crate::ai::providers::CompletionRequest {
+                model,
+                system: "You summarise conversations concisely.".to_string(),
+                context: vec![],
+                partial_input: prompt,
+            };
+
+            let cancel = tokio_util::sync::CancellationToken::new();
+            if let Ok(summary) = provider.complete(req, cancel).await {
+                if !summary.is_empty() {
+                    let key = format!("ai_summary:{}", chat_id);
+                    let _ = db_tx.send((key, summary));
+                }
+            }
+        });
+    }
+
     /// Cancel any inflight request and fire a new one.
     pub fn request(&mut self, req: AiRequest) {
         // Cancel previous inflight request

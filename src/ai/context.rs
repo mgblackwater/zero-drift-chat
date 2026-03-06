@@ -10,6 +10,16 @@ pub struct RawMessage {
     pub text: String,
 }
 
+impl RawMessage {
+    pub fn to_chat_line_owned(&self) -> String {
+        if self.is_outgoing {
+            format!("[You]: {}", self.text)
+        } else {
+            format!("[Them]: {}", self.text)
+        }
+    }
+}
+
 /// Assemble context from optional summary + last N messages.
 pub fn build_context(
     messages: &[RawMessage],
