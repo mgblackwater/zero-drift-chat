@@ -198,6 +198,14 @@ impl App {
                                             self.config.ai.base_url, self.config.ai.model, messages.len(),
                                             if partial.len() > 40 { &partial[..40] } else { &partial }
                                         ));
+                                        tracing::info!(
+                                            trigger = "debounce",
+                                            url = %format!("{}/v1/chat/completions", self.config.ai.base_url),
+                                            model = %self.config.ai.model,
+                                            context_msgs = messages.len(),
+                                            input = %partial,
+                                            "AI autocomplete request"
+                                        );
                                         worker.request(AiRequest { partial_input: partial, messages, summary });
                                     }
                                 }
@@ -217,12 +225,14 @@ impl App {
                 }
                 Some(AppEvent::AiSuggestion(text)) => {
                     if self.state.input_mode == InputMode::Editing {
+                        tracing::info!(suggestion = %text, "AI autocomplete suggestion received");
                         self.state.push_ai_log(format!("[suggestion] ← {:?}", text));
                         self.state.ai_suggestion = Some(text);
                         self.state.ai_status = None;
                     }
                 }
                 Some(AppEvent::AiError(e)) => {
+                    tracing::info!(error = %e, "AI autocomplete error");
                     self.state.push_ai_log(format!("[error] ← {}", e));
                     self.state.ai_status = Some(format!("AI: {}", e));
                 }
@@ -696,6 +706,14 @@ impl App {
                                 self.config.ai.base_url, self.config.ai.model, messages.len(),
                                 if partial.len() > 40 { &partial[..40] } else { &partial }
                             ));
+                            tracing::info!(
+                                trigger = "ctrl+space",
+                                url = %format!("{}/v1/chat/completions", self.config.ai.base_url),
+                                model = %self.config.ai.model,
+                                context_msgs = messages.len(),
+                                input = %partial,
+                                "AI autocomplete request"
+                            );
                             worker.request(AiRequest { partial_input: partial, messages, summary });
                         }
                     }
