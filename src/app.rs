@@ -340,20 +340,25 @@ impl App {
                         }
                     }
 
-                    // Move chat to top of list (like WhatsApp)
+                    // Move chat to top of its group (pinned→top of pinned, unpinned→top of unpinned)
                     if let Some(pos) = self.state.chats.iter().position(|c| c.id == msg.chat_id) {
-                        if pos > 0 {
-                            let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
-                            let chat = self.state.chats.remove(pos);
-                            // Insert after the last pinned chat so pinned chats stay at the top
-                            let insert_pos = self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0);
+                        let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
+                        let chat = self.state.chats.remove(pos);
+                        let insert_pos = if chat.is_pinned {
+                            0
+                        } else {
+                            // Top of unpinned section = one after the last pinned chat
+                            self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0)
+                        };
+                        if pos != insert_pos {
                             self.state.chats.insert(insert_pos, chat);
-                            // Keep selection on the same chat
                             if let Some(id) = selected_id {
                                 if let Some(new_pos) = self.state.chats.iter().position(|c| c.id == id) {
                                     self.state.chat_list_state.select(Some(new_pos));
                                 }
                             }
+                        } else {
+                            self.state.chats.insert(pos, chat);
                         }
                     }
                 }
