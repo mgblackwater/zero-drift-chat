@@ -59,9 +59,13 @@ impl AiProvider for OpenAiClient {
         ];
 
         for ctx_msg in &req.context {
+            let role = match ctx_msg.role {
+                crate::ai::providers::MessageRole::User => "user",
+                crate::ai::providers::MessageRole::Assistant => "assistant",
+            };
             messages.push(ChatMessage {
-                role: "user".to_string(),
-                content: ctx_msg.to_chat_line(),
+                role: role.to_string(),
+                content: ctx_msg.content.clone(),
             });
         }
 
