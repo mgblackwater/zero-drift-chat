@@ -134,11 +134,25 @@ impl App {
                 })
                 .collect();
 
-            // Apply display names from address book
+            // Apply display names from address book (user-set, highest priority)
             if let Ok(names) = self.address_book.get_all_display_names() {
                 for chat in &mut chats {
                     if let Some(name) = names.get(&chat.id) {
                         chat.display_name = Some(name.clone());
+                    }
+                }
+            }
+            // Apply contact names to chats that still show a raw phone number
+            for chat in &mut chats {
+                if chat.display_name.is_some() {
+                    continue;
+                }
+                if let Some(phone) = Self::extract_wa_phone(&chat.id) {
+                    let is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                    if is_numeric {
+                        if let Ok(Some(contact_name)) = self.address_book.lookup_contact(phone) {
+                            chat.name = contact_name;
+                        }
                     }
                 }
             }
@@ -278,6 +292,22 @@ impl App {
                         tracing::error!("Failed to insert message: {}", e);
                     }
 
+                    // Store push_name as contact so we can name phone-number chats
+                    if !msg.is_outgoing && msg.sender != "You" && !msg.sender.is_empty() {
+                        if let Some(phone) = Self::extract_wa_phone(&msg.chat_id) {
+                            let _ = self.address_book.upsert_contact(phone, &msg.sender);
+                            // Apply to the in-memory chat if it still shows a phone number
+                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == msg.chat_id) {
+                                if chat.display_name.is_none() {
+                                    let is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                                    if is_numeric {
+                                        chat.name = msg.sender.clone();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Update last_message on the chat
                     let preview = msg.content.as_text().to_string();
                     let _ = self.db.update_last_message(&msg.chat_id, &preview);
@@ -389,7 +419,16 @@ impl App {
                                 existing.name = chat.name;
                             }
                         } else {
-                            self.state.chats.push(chat);
+                            // Apply address-book / contact name to newly discovered chats
+                            let mut new_chat = chat;
+                            if let Some(name) = self.resolve_contact_name(&new_chat.id) {
+                                new_chat.display_name = Some(name);
+                            } else if let Some(phone) = Self::extract_wa_phone(&new_chat.id) {
+                                if let Ok(Some(contact_name)) = self.address_book.lookup_contact(phone) {
+                                    new_chat.name = contact_name;
+                                }
+                            }
+                            self.state.chats.push(new_chat);
                         }
                     }
                     // Note: no load_selected_chat_messages() here —
@@ -815,5 +854,34 @@ impl App {
     fn update_title(has_unread: bool) {
         let title = if has_unread { "● zero-drift-chat" } else { "zero-drift-chat" };
         let _ = execute!(io::stdout(), SetTitle(title));
+    }
+
+    /// Extract the phone/identifier from a WhatsApp chat_id like `wa-559985213786@s.whatsapp.net`.
+    /// Returns the part before `@`, or None for non-WA or group/newsletter chats.
+    fn extract_wa_phone(chat_id: &str) -> Option<&str> {
+        let raw = chat_id.strip_prefix("wa-")?;
+        // Only direct (non-group, non-newsletter) chats
+        if raw.contains("@g.us") || raw.contains("@newsletter") || raw.contains("@lid") {
+            return None;
+        }
+        Some(raw.split('@').next().unwrap_or(raw))
+    }
+
+    /// Resolve a display name for a chat: address-book display_name first,
+    /// then contacts table by phone, then None.
+    fn resolve_contact_name(&self, chat_id: &str) -> Option<String> {
+        // 1. User-set display name wins
+        if let Ok(names) = self.address_book.get_all_display_names() {
+            if let Some(name) = names.get(chat_id) {
+                return Some(name.clone());
+            }
+        }
+        // 2. Contacts table by phone
+        if let Some(phone) = Self::extract_wa_phone(chat_id) {
+            if let Ok(Some(name)) = self.address_book.lookup_contact(phone) {
+                return Some(name);
+            }
+        }
+        None
     }
 }
