@@ -133,13 +133,17 @@ impl SettingsState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatMenuItem {
     TogglePin,
+    ToggleMute,
 }
 
 impl ChatMenuItem {
-    pub fn label(&self, is_pinned: bool) -> &'static str {
+    pub fn label(&self, is_pinned: bool, is_muted: bool) -> &'static str {
         match self {
             ChatMenuItem::TogglePin => {
                 if is_pinned { "Unpin" } else { "Pin" }
+            }
+            ChatMenuItem::ToggleMute => {
+                if is_muted { "Unmute" } else { "Mute" }
             }
         }
     }
@@ -149,18 +153,20 @@ pub struct ChatMenuState {
     pub chat_id: String,
     pub chat_name: String,
     pub is_pinned: bool,
+    pub is_muted: bool,
     pub selected: usize,
     pub items: Vec<ChatMenuItem>,
 }
 
 impl ChatMenuState {
-    pub fn new(chat_id: String, chat_name: String, is_pinned: bool) -> Self {
+    pub fn new(chat_id: String, chat_name: String, is_pinned: bool, is_muted: bool) -> Self {
         Self {
             chat_id,
             chat_name,
             is_pinned,
+            is_muted,
             selected: 0,
-            items: vec![ChatMenuItem::TogglePin],
+            items: vec![ChatMenuItem::TogglePin, ChatMenuItem::ToggleMute],
         }
     }
 
@@ -339,6 +345,7 @@ impl AppState {
                     chat.id.clone(),
                     chat.display_name.clone().unwrap_or_else(|| chat.name.clone()),
                     chat.is_pinned,
+                    chat.is_muted,
                 ));
                 self.input_mode = InputMode::ChatMenu;
             }
@@ -360,6 +367,6 @@ impl AppState {
     }
 
     pub fn has_unread(&self) -> bool {
-        self.chats.iter().any(|c| c.unread_count > 0)
+        self.chats.iter().any(|c| !c.is_muted && c.unread_count > 0)
     }
 }

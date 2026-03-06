@@ -83,6 +83,7 @@ impl MockProvider {
                 is_group: i == 2, // "Team Standup"
                 is_pinned: false,
                 is_newsletter: NEWSLETTER_INDICES.contains(&i),
+                is_muted: false,
             })
             .collect()
     }

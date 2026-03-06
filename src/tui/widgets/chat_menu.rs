@@ -25,7 +25,7 @@ pub fn render_chat_menu(f: &mut Frame, parent_area: Rect, state: &ChatMenuState)
         .map(|item| {
             ListItem::new(Line::from(Span::raw(format!(
                 " {}",
-                item.label(state.is_pinned)
+                item.label(state.is_pinned, state.is_muted)
             ))))
         })
         .collect();

@@ -91,6 +91,11 @@ impl Database {
             [],
         );
 
+        // Migration: add muted column if not exists
+        let _ = self
+            .conn
+            .execute("ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0", []);
+
         Ok(())
     }
 }

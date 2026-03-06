@@ -50,14 +50,24 @@ impl App {
         config_path: PathBuf,
         event_tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
     ) -> Self {
+        tracing::info!(
+            enabled = config.ai.enabled,
+            provider = %config.ai.provider,
+            base_url = %config.ai.base_url,
+            model = %config.ai.model,
+            debug = config.ai.debug,
+            "AI config loaded"
+        );
         let ai_worker = if config.ai.enabled {
             let provider: Box<dyn crate::ai::providers::AiProvider> = match config.ai.provider.as_str() {
                 "anthropic" => Box::new(AnthropicClient::new(config.ai.api_key.clone())),
                 "gemini"    => Box::new(GeminiClient::new(config.ai.api_key.clone())),
                 _           => Box::new(OpenAiClient::new(config.ai.base_url.clone(), config.ai.api_key.clone())),
             };
+            tracing::info!("AI worker created — autocomplete enabled");
             Some(AiWorker::new(provider, config.ai.clone(), event_tx))
         } else {
+            tracing::info!("AI worker NOT created — ai.enabled = false in config");
             None
         };
 
@@ -605,23 +615,29 @@ impl App {
                     let chat_id = menu.chat_id.clone();
                     let new_pinned = !menu.is_pinned;
 
-                    if let Some(ChatMenuItem::TogglePin) = selected_item {
-                        // Enforce max 10 pinned chats
-                        if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
-                            self.state.close_chat_menu();
-                            return;
+                    match selected_item {
+                        Some(ChatMenuItem::TogglePin) => {
+                            // Enforce max 10 pinned chats
+                            if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
+                                self.state.close_chat_menu();
+                                return;
+                            }
+                            let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
+                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                                chat.is_pinned = new_pinned;
+                            }
+                            self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
+                            let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
+                            self.state.chat_list_state.select(Some(new_idx));
                         }
-                        // Persist to DB
-                        let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
-                        // Update in-memory chat list
-                        if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
-                            chat.is_pinned = new_pinned;
+                        Some(ChatMenuItem::ToggleMute) => {
+                            let new_muted = !menu.is_muted;
+                            let _ = self.db.set_chat_muted(&chat_id, new_muted);
+                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                                chat.is_muted = new_muted;
+                            }
                         }
-                        // Re-sort: pinned chats first, preserve relative order otherwise
-                        self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
-                        // Select the chat that was just pinned/unpinned at its new position
-                        let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
-                        self.state.chat_list_state.select(Some(new_idx));
+                        None => {}
                     }
                 }
                 self.state.close_chat_menu();

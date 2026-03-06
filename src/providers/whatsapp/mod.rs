@@ -271,6 +271,7 @@ fn handle_wa_event(
                     is_group: source.is_group,
                     is_pinned: false,
                     is_newsletter,
+                    is_muted: false,
                 };
 
                 let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));
@@ -350,6 +351,7 @@ fn handle_wa_event(
                         is_group,
                         is_pinned: false,
                         is_newsletter,
+                        is_muted: false,
                     };
 
                     let _ = tx.send(ProviderEvent::ChatsUpdated(vec![chat]));
