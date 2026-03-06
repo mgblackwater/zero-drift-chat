@@ -63,8 +63,11 @@ impl App {
 
         let (db_summary_tx, db_summary_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
 
+        let mut state = AppState::new();
+        state.ai_debug = config.ai.debug;
+
         Self {
-            state: AppState::new(),
+            state,
             router: MessageRouter::new(),
             db,
             address_book,
@@ -190,6 +193,11 @@ impl App {
                                             .collect();
                                         let summary = self.state.selected_chat_id()
                                             .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                                        self.state.push_ai_log(format!(
+                                            "[debounce] → POST {}/v1/chat/completions | model={} | ctx={} msgs | input={:?}",
+                                            self.config.ai.base_url, self.config.ai.model, messages.len(),
+                                            if partial.len() > 40 { &partial[..40] } else { &partial }
+                                        ));
                                         worker.request(AiRequest { partial_input: partial, messages, summary });
                                     }
                                 }
@@ -209,11 +217,13 @@ impl App {
                 }
                 Some(AppEvent::AiSuggestion(text)) => {
                     if self.state.input_mode == InputMode::Editing {
+                        self.state.push_ai_log(format!("[suggestion] ← {:?}", text));
                         self.state.ai_suggestion = Some(text);
-                        self.state.ai_status = None;  // clear any previous error
+                        self.state.ai_status = None;
                     }
                 }
                 Some(AppEvent::AiError(e)) => {
+                    self.state.push_ai_log(format!("[error] ← {}", e));
                     self.state.ai_status = Some(format!("AI: {}", e));
                 }
                 Some(AppEvent::Quit) | None => {
@@ -681,6 +691,11 @@ impl App {
                                 .collect();
                             let summary = self.state.selected_chat_id()
                                 .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                            self.state.push_ai_log(format!(
+                                "[Ctrl+Space] → POST {}/v1/chat/completions | model={} | ctx={} msgs | input={:?}",
+                                self.config.ai.base_url, self.config.ai.model, messages.len(),
+                                if partial.len() > 40 { &partial[..40] } else { &partial }
+                            ));
                             worker.request(AiRequest { partial_input: partial, messages, summary });
                         }
                     }

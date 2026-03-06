@@ -1,5 +1,8 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -25,13 +28,19 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
 
     // Input box grows with content: +2 for borders, clamped between 3 (1 line) and 8 (6 lines)
     let input_height = (state.input.lines().len() as u16 + 2).clamp(3, 8);
+    let debug_height: u16 = if state.ai_debug { 8 } else { 0 };
     let message_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(input_height)])
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(input_height),
+            Constraint::Length(debug_height),
+        ])
         .split(message_area);
 
     let message_view_area = message_layout[0];
     let input_area = message_layout[1];
+    let debug_area = message_layout[2];
 
     // Get current chat name
     let chat_name = state
@@ -67,6 +76,33 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         state.input_mode,
         state.ai_suggestion.as_deref(),
     );
+
+    // AI debug panel
+    if state.ai_debug {
+        let log_lines: Vec<Line> = if state.ai_debug_log.is_empty() {
+            vec![Line::from(Span::styled(
+                "  waiting for AI activity... (type something in INSERT mode)",
+                Style::default().fg(Color::DarkGray),
+            ))]
+        } else {
+            state.ai_debug_log.iter().map(|entry| {
+                let color = if entry.starts_with("[error]") {
+                    Color::Red
+                } else if entry.starts_with("[suggestion]") {
+                    Color::Green
+                } else {
+                    Color::Cyan
+                };
+                Line::from(Span::styled(entry.as_str(), Style::default().fg(color)))
+            }).collect()
+        };
+        let debug_widget = Paragraph::new(log_lines)
+            .block(Block::default()
+                .title(" AI Debug ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::DarkGray)));
+        f.render_widget(debug_widget, debug_area);
+    }
 
     status_bar::render_status_bar(
         f,

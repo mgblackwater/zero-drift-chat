@@ -213,6 +213,8 @@ pub struct AppState {
     pub search_state: Option<SearchState>,
     pub ai_suggestion: Option<String>,
     pub ai_status: Option<String>,
+    pub ai_debug: bool,
+    pub ai_debug_log: Vec<String>,
     pub enter_sends: bool,
     /// Number of unread messages at the tail of `messages` when a chat was opened.
     pub new_message_count: usize,
@@ -240,6 +242,8 @@ impl AppState {
             search_state: None,
             ai_suggestion: None,
             ai_status: None,
+            ai_debug: false,
+            ai_debug_log: Vec::new(),
             enter_sends: true,
             new_message_count: 0,
         }
@@ -344,6 +348,15 @@ impl AppState {
     pub fn close_chat_menu(&mut self) {
         self.chat_menu_state = None;
         self.input_mode = InputMode::Normal;
+    }
+
+    pub fn push_ai_log(&mut self, entry: String) {
+        if self.ai_debug {
+            self.ai_debug_log.push(entry);
+            if self.ai_debug_log.len() > 6 {
+                self.ai_debug_log.remove(0);
+            }
+        }
     }
 
     pub fn has_unread(&self) -> bool {

@@ -132,6 +132,8 @@ pub struct AiConfig {
     pub summary_threshold: usize,
     #[serde(default = "default_debounce_ms")]
     pub debounce_ms: u64,
+    #[serde(default)]
+    pub debug: bool,
 }
 
 impl Default for AiConfig {
@@ -145,6 +147,7 @@ impl Default for AiConfig {
             context_messages: default_context_messages(),
             summary_threshold: default_summary_threshold(),
             debounce_ms: default_debounce_ms(),
+            debug: false,
         }
     }
 }
