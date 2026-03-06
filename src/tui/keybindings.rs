@@ -125,8 +125,8 @@ fn map_search_mode(key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => Action::SearchClose,
         KeyCode::Enter => Action::SearchConfirm,
-        KeyCode::Char('j') | KeyCode::Down => Action::SearchNext,
-        KeyCode::Char('k') | KeyCode::Up => Action::SearchPrev,
+        KeyCode::Down => Action::SearchNext,
+        KeyCode::Up => Action::SearchPrev,
         _ => Action::SearchInput(key),
     }
 }
