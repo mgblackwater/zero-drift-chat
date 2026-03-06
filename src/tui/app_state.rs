@@ -211,6 +211,8 @@ pub struct AppState {
     pub settings_state: Option<SettingsState>,
     pub chat_menu_state: Option<ChatMenuState>,
     pub search_state: Option<SearchState>,
+    pub ai_suggestion: Option<String>,
+    pub ai_status: Option<String>,
     pub enter_sends: bool,
     /// Number of unread messages at the tail of `messages` when a chat was opened.
     pub new_message_count: usize,
@@ -236,6 +238,8 @@ impl AppState {
             settings_state: None,
             chat_menu_state: None,
             search_state: None,
+            ai_suggestion: None,
+            ai_status: None,
             enter_sends: true,
             new_message_count: 0,
         }

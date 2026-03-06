@@ -568,6 +568,7 @@ impl App {
                     self.refresh_title();
                 }
             }
+            Action::AiSuggestAccept | Action::AiSuggestRequest => {}
             Action::None => {}
         }
     }
