@@ -150,6 +150,9 @@ impl App {
                 Some(AppEvent::Resize(_, _)) => {
                     // Terminal handles resize automatically
                 }
+                Some(AppEvent::AiSuggestion(_)) | Some(AppEvent::AiError(_)) => {
+                    // Handled in Task 7 when AiWorker is wired into app
+                }
                 Some(AppEvent::Quit) | None => {
                     break;
                 }

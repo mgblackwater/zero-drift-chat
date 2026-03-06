@@ -11,16 +11,20 @@ pub enum AppEvent {
     Tick,
     Render,
     Quit,
+    AiSuggestion(String),
+    AiError(String),
 }
 
 pub struct EventHandler {
     rx: mpsc::UnboundedReceiver<AppEvent>,
+    pub tx: mpsc::UnboundedSender<AppEvent>,
     _task: tokio::task::JoinHandle<()>,
 }
 
 impl EventHandler {
     pub fn new(tick_rate_ms: u64, render_rate_ms: u64) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::unbounded_channel::<AppEvent>();
+        let task_tx = tx.clone();
 
         let task = tokio::spawn(async move {
             let mut reader = EventStream::new();
@@ -32,12 +36,12 @@ impl EventHandler {
             loop {
                 tokio::select! {
                     _ = tick_interval.tick() => {
-                        if tx.send(AppEvent::Tick).is_err() {
+                        if task_tx.send(AppEvent::Tick).is_err() {
                             break;
                         }
                     }
                     _ = render_interval.tick() => {
-                        if tx.send(AppEvent::Render).is_err() {
+                        if task_tx.send(AppEvent::Render).is_err() {
                             break;
                         }
                     }
@@ -46,13 +50,13 @@ impl EventHandler {
                             Event::Key(key) => {
                                 // Windows fix: only handle Press events to avoid duplicates
                                 if key.kind == KeyEventKind::Press {
-                                    if tx.send(AppEvent::Key(key)).is_err() {
+                                    if task_tx.send(AppEvent::Key(key)).is_err() {
                                         break;
                                     }
                                 }
                             }
                             Event::Resize(w, h) => {
-                                if tx.send(AppEvent::Resize(w, h)).is_err() {
+                                if task_tx.send(AppEvent::Resize(w, h)).is_err() {
                                     break;
                                 }
                             }
@@ -63,10 +67,14 @@ impl EventHandler {
             }
         });
 
-        Self { rx, _task: task }
+        Self { rx, tx, _task: task }
     }
 
     pub async fn next(&mut self) -> Option<AppEvent> {
         self.rx.recv().await
+    }
+
+    pub fn sender(&self) -> mpsc::UnboundedSender<AppEvent> {
+        self.tx.clone()
     }
 }
