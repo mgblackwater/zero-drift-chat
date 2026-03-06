@@ -4,6 +4,7 @@ mod core;
 mod providers;
 mod storage;
 mod tui;
+mod ai;
 
 use std::path::PathBuf;
 
