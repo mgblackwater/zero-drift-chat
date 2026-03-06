@@ -53,11 +53,15 @@ impl AiWorker {
                 partial_input: req.partial_input,
             };
 
+            let check_token = token.clone();
             match provider.complete(completion_req, token).await {
                 Ok(text) if !text.is_empty() => {
                     let _ = event_tx.send(AppEvent::AiSuggestion(text));
                 }
-                Err(e) if e.to_string() != "cancelled" => {
+                Err(_) if check_token.is_cancelled() => {
+                    // Request was cancelled — silently ignore
+                }
+                Err(e) => {
                     let _ = event_tx.send(AppEvent::AiError(e.to_string()));
                 }
                 _ => {}
