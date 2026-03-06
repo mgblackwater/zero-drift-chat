@@ -198,7 +198,8 @@ impl AppConfig {
     pub fn load(path: &Path) -> Result<Self> {
         if path.exists() {
             let content = std::fs::read_to_string(path)?;
-            let config: AppConfig = toml::from_str(&content)?;
+            let config: AppConfig = toml::from_str(&content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse config {}: {}", path.display(), e))?;
             Ok(config)
         } else {
             Ok(Self::default())
@@ -217,5 +218,32 @@ impl AppConfig {
         );
         std::fs::write(path, content)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ai_config() {
+        let toml = r#"
+[ai]
+enabled = true
+provider = "ollama"
+base_url = "http://localhost:8080"
+model = "qwen2.5-1.5b-instruct-q4_k_m"
+context_messages = 10
+summary_threshold = 50
+debounce_ms = 500
+debug = true
+"#;
+        let result = toml::from_str::<AppConfig>(toml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let cfg = result.unwrap();
+        assert!(cfg.ai.enabled, "ai.enabled should be true");
+        assert_eq!(cfg.ai.base_url, "http://localhost:8080");
+        assert_eq!(cfg.ai.model, "qwen2.5-1.5b-instruct-q4_k_m");
+        assert!(cfg.ai.debug);
     }
 }
