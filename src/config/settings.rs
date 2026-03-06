@@ -123,6 +123,7 @@ pub struct AiConfig {
     pub provider: String,
     #[serde(default = "default_ai_base_url")]
     pub base_url: String,
+    #[serde(default)]
     pub api_key: Option<String>,
     #[serde(default = "default_ai_model")]
     pub model: String,
