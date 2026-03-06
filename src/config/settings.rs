@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub mock_provider: MockProviderConfig,
     #[serde(default)]
     pub whatsapp: WhatsAppConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +96,48 @@ fn default_message_interval() -> u64 {
     3
 }
 
+fn default_ai_provider() -> String { "ollama".to_string() }
+fn default_ai_base_url() -> String { "http://localhost:11434".to_string() }
+fn default_ai_model() -> String { "qwen2.5:1.5b-instruct".to_string() }
+fn default_context_messages() -> usize { 10 }
+fn default_summary_threshold() -> usize { 50 }
+fn default_debounce_ms() -> u64 { 500 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_ai_provider")]
+    pub provider: String,
+    #[serde(default = "default_ai_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_ai_model")]
+    pub model: String,
+    #[serde(default = "default_context_messages")]
+    pub context_messages: usize,
+    #[serde(default = "default_summary_threshold")]
+    pub summary_threshold: usize,
+    #[serde(default = "default_debounce_ms")]
+    pub debounce_ms: u64,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: default_ai_provider(),
+            base_url: default_ai_base_url(),
+            api_key: String::new(),
+            model: default_ai_model(),
+            context_messages: default_context_messages(),
+            summary_threshold: default_summary_threshold(),
+            debounce_ms: default_debounce_ms(),
+        }
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -101,6 +145,7 @@ impl Default for AppConfig {
             tui: TuiConfig::default(),
             mock_provider: MockProviderConfig::default(),
             whatsapp: WhatsAppConfig::default(),
+            ai: AiConfig::default(),
         }
     }
 }

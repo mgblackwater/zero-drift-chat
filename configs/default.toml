@@ -15,3 +15,13 @@ message_interval_secs = 3
 [whatsapp]
 enabled = true
 # phone_number = "+1234567890"
+
+[ai]
+# enabled = false
+# provider = "ollama"          # ollama | openai | anthropic | gemini
+# base_url = "http://localhost:11434"
+# api_key = ""
+# model = "qwen2.5:1.5b-instruct"
+# context_messages = 10
+# summary_threshold = 50
+# debounce_ms = 500
