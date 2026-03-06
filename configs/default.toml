@@ -17,7 +17,7 @@ enabled = true
 # phone_number = "+1234567890"
 
 [ai]
-# enabled = false
+enabled = false
 # provider = "ollama"          # ollama | openai | anthropic | gemini
 # base_url = "http://localhost:11434"
 # api_key = ""

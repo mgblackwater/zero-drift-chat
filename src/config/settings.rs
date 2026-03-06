@@ -96,12 +96,24 @@ fn default_message_interval() -> u64 {
     3
 }
 
-fn default_ai_provider() -> String { "ollama".to_string() }
-fn default_ai_base_url() -> String { "http://localhost:11434".to_string() }
-fn default_ai_model() -> String { "qwen2.5:1.5b-instruct".to_string() }
-fn default_context_messages() -> usize { 10 }
-fn default_summary_threshold() -> usize { 50 }
-fn default_debounce_ms() -> u64 { 500 }
+fn default_ai_provider() -> String {
+    "ollama".to_string()
+}
+fn default_ai_base_url() -> String {
+    "http://localhost:11434".to_string()
+}
+fn default_ai_model() -> String {
+    "qwen2.5:1.5b-instruct".to_string()
+}
+fn default_context_messages() -> usize {
+    10
+}
+fn default_summary_threshold() -> usize {
+    50
+}
+fn default_debounce_ms() -> u64 {
+    500
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiConfig {
@@ -111,8 +123,7 @@ pub struct AiConfig {
     pub provider: String,
     #[serde(default = "default_ai_base_url")]
     pub base_url: String,
-    #[serde(default)]
-    pub api_key: String,
+    pub api_key: Option<String>,
     #[serde(default = "default_ai_model")]
     pub model: String,
     #[serde(default = "default_context_messages")]
@@ -129,7 +140,7 @@ impl Default for AiConfig {
             enabled: false,
             provider: default_ai_provider(),
             base_url: default_ai_base_url(),
-            api_key: String::new(),
+            api_key: None,
             model: default_ai_model(),
             context_messages: default_context_messages(),
             summary_threshold: default_summary_threshold(),
