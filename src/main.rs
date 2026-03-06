@@ -13,6 +13,7 @@ use clap::Parser;
 use crate::app::App;
 use crate::config::AppConfig;
 use crate::storage::{AddressBook, Database};
+use crate::tui::event::EventHandler;
 
 #[derive(Parser, Debug)]
 #[command(name = "zero-drift-chat", about = "Unified messaging TUI")]
@@ -109,8 +110,9 @@ async fn main() -> anyhow::Result<()> {
     let address_book = AddressBook::open(ab_path.to_str().unwrap_or("addressbook.db"))?;
 
     // Run app
-    let mut app = App::new(config, db, address_book, config_path);
-    app.run().await?;
+    let event_handler = EventHandler::new(config.tui.tick_rate_ms, config.tui.render_rate_ms);
+    let mut app = App::new(config, db, address_book, config_path, event_handler.sender());
+    app.run(event_handler).await?;
 
     tracing::info!("zero-drift-chat exited cleanly");
     Ok(())

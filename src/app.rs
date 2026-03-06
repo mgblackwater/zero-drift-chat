@@ -1,5 +1,6 @@
 use std::io;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossterm::{
     execute,
@@ -7,6 +8,11 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
+use crate::ai::worker::{AiWorker, AiRequest};
+use crate::ai::context::RawMessage;
+use crate::ai::providers::openai::OpenAiClient;
+use crate::ai::providers::anthropic::AnthropicClient;
+use crate::ai::providers::gemini::GeminiClient;
 use crate::config::AppConfig;
 use crate::core::provider::ProviderEvent;
 use crate::core::types::{AuthStatus, MessageContent, Platform};
@@ -30,10 +36,29 @@ pub struct App {
     address_book: AddressBook,
     config: AppConfig,
     config_path: PathBuf,
+    ai_worker: Option<AiWorker>,
+    last_keystroke: Option<Instant>,
 }
 
 impl App {
-    pub fn new(config: AppConfig, db: Database, address_book: AddressBook, config_path: PathBuf) -> Self {
+    pub fn new(
+        config: AppConfig,
+        db: Database,
+        address_book: AddressBook,
+        config_path: PathBuf,
+        event_tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
+    ) -> Self {
+        let ai_worker = if config.ai.enabled {
+            let provider: Box<dyn crate::ai::providers::AiProvider> = match config.ai.provider.as_str() {
+                "anthropic" => Box::new(AnthropicClient::new(config.ai.api_key.clone())),
+                "gemini"    => Box::new(GeminiClient::new(config.ai.api_key.clone())),
+                _           => Box::new(OpenAiClient::new(config.ai.base_url.clone(), config.ai.api_key.clone())),
+            };
+            Some(AiWorker::new(provider, config.ai.clone(), event_tx))
+        } else {
+            None
+        };
+
         Self {
             state: AppState::new(),
             router: MessageRouter::new(),
@@ -41,10 +66,12 @@ impl App {
             address_book,
             config,
             config_path,
+            ai_worker,
+            last_keystroke: None,
         }
     }
 
-    pub async fn run(&mut self) -> anyhow::Result<()> {
+    pub async fn run(&mut self, mut events: EventHandler) -> anyhow::Result<()> {
         // Load enter_sends preference from DB (default true)
         self.state.enter_sends = self.db
             .get_preference("enter_sends")
@@ -123,12 +150,6 @@ impl App {
             original_hook(panic_info);
         }));
 
-        // Event handler
-        let mut events = EventHandler::new(
-            self.config.tui.tick_rate_ms,
-            self.config.tui.render_rate_ms,
-        );
-
         // Main loop
         loop {
             let event = events.next().await;
@@ -139,6 +160,32 @@ impl App {
                 }
                 Some(AppEvent::Tick) => {
                     self.handle_tick();
+                    // AI debounce: fire request after user stops typing
+                    if let Some(t) = self.last_keystroke {
+                        let debounce = Duration::from_millis(self.config.ai.debounce_ms);
+                        if t.elapsed() >= debounce {
+                            self.last_keystroke = None;
+                            if self.state.input_mode == InputMode::Editing {
+                                let partial = self.state.input.lines().join("\n");
+                                if !partial.is_empty() {
+                                    if let Some(worker) = self.ai_worker.as_mut() {
+                                        let messages: Vec<RawMessage> = self.state.messages.iter()
+                                            .filter_map(|m| {
+                                                let text = match &m.content {
+                                                    crate::core::types::MessageContent::Text(t) => t.clone(),
+                                                    _ => return None,
+                                                };
+                                                Some(RawMessage { is_outgoing: m.is_outgoing, text })
+                                            })
+                                            .collect();
+                                        let summary = self.state.selected_chat_id()
+                                            .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                                        worker.request(AiRequest { partial_input: partial, messages, summary });
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Some(AppEvent::Key(key)) => {
                     let action = map_key(key, self.state.input_mode, self.state.enter_sends);
@@ -150,8 +197,13 @@ impl App {
                 Some(AppEvent::Resize(_, _)) => {
                     // Terminal handles resize automatically
                 }
-                Some(AppEvent::AiSuggestion(_)) | Some(AppEvent::AiError(_)) => {
-                    // Handled in Task 7 when AiWorker is wired into app
+                Some(AppEvent::AiSuggestion(text)) => {
+                    if self.state.input_mode == InputMode::Editing {
+                        self.state.ai_suggestion = Some(text);
+                    }
+                }
+                Some(AppEvent::AiError(e)) => {
+                    self.state.ai_status = Some(format!("AI: {}", e));
                 }
                 Some(AppEvent::Quit) | None => {
                     break;
@@ -357,6 +409,7 @@ impl App {
             }
             Action::ExitEditing => {
                 self.state.exit_editing();
+                self.state.ai_suggestion = None;
             }
             Action::SubmitMessage => {
                 let input = self.state.take_input();
@@ -389,6 +442,10 @@ impl App {
             }
             Action::InputKey(key) => {
                 self.state.input.input(key);
+                self.state.ai_suggestion = None;
+                if self.state.input_mode == InputMode::Editing {
+                    self.last_keystroke = Some(Instant::now());
+                }
             }
             Action::ClearInput => {
                 self.state.input = TextArea::default();
@@ -568,7 +625,34 @@ impl App {
                     self.refresh_title();
                 }
             }
-            Action::AiSuggestAccept | Action::AiSuggestRequest => {}
+            Action::AiSuggestAccept => {
+                if let Some(suggestion) = self.state.ai_suggestion.take() {
+                    for ch in suggestion.chars() {
+                        self.state.input.insert_char(ch);
+                    }
+                }
+            }
+            Action::AiSuggestRequest => {
+                if self.state.input_mode == InputMode::Editing {
+                    let partial = self.state.input.lines().join("\n");
+                    if !partial.is_empty() {
+                        if let Some(worker) = self.ai_worker.as_mut() {
+                            let messages: Vec<RawMessage> = self.state.messages.iter()
+                                .filter_map(|m| {
+                                    let text = match &m.content {
+                                        crate::core::types::MessageContent::Text(t) => t.clone(),
+                                        _ => return None,
+                                    };
+                                    Some(RawMessage { is_outgoing: m.is_outgoing, text })
+                                })
+                                .collect();
+                            let summary = self.state.selected_chat_id()
+                                .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                            worker.request(AiRequest { partial_input: partial, messages, summary });
+                        }
+                    }
+                }
+            }
             Action::None => {}
         }
     }
