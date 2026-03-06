@@ -44,7 +44,9 @@ struct AnthropicContent {
 #[async_trait]
 impl AiProvider for AnthropicClient {
     async fn complete(&self, req: CompletionRequest, cancel: CancellationToken) -> Result<String> {
-        let api_key = self.api_key.as_deref().unwrap_or_default();
+        let api_key = self.api_key.as_deref()
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| anyhow!("Anthropic API key not configured"))?;
 
         let mut messages: Vec<AnthropicMessage> = req.context.iter().map(|m| {
             let role = match m.role {
@@ -78,7 +80,7 @@ impl AiProvider for AnthropicClient {
         tokio::select! {
             _ = cancel.cancelled() => Err(anyhow!("cancelled")),
             res = request.send() => {
-                let resp: AnthropicResponse = res?.json().await?;
+                let resp: AnthropicResponse = res?.error_for_status()?.json().await?;
                 Ok(resp.content.into_iter().next()
                     .map(|c| c.text.trim().to_string())
                     .unwrap_or_default())

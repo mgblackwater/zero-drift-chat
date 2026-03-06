@@ -71,7 +71,9 @@ struct GeminiResponsePart {
 #[async_trait]
 impl AiProvider for GeminiClient {
     async fn complete(&self, req: CompletionRequest, cancel: CancellationToken) -> Result<String> {
-        let api_key = self.api_key.as_deref().unwrap_or_default();
+        let api_key = self.api_key.as_deref()
+            .filter(|k| !k.is_empty())
+            .ok_or_else(|| anyhow!("Gemini API key not configured"))?;
 
         let mut contents: Vec<GeminiContent> = req.context.iter().map(|m| {
             let role = match m.role {
@@ -109,7 +111,7 @@ impl AiProvider for GeminiClient {
         tokio::select! {
             _ = cancel.cancelled() => Err(anyhow!("cancelled")),
             res = request.send() => {
-                let resp: GeminiResponse = res?.json().await?;
+                let resp: GeminiResponse = res?.error_for_status()?.json().await?;
                 Ok(resp.candidates.into_iter().next()
                     .and_then(|c| c.content.parts.into_iter().next())
                     .map(|p| p.text.trim().to_string())

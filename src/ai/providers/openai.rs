@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use super::{AiProvider, CompletionRequest};
+use super::{AiProvider, CompletionRequest, MessageRole};
 
 #[derive(Clone)]
 pub struct OpenAiClient {
@@ -60,8 +60,8 @@ impl AiProvider for OpenAiClient {
 
         for ctx_msg in &req.context {
             let role = match ctx_msg.role {
-                crate::ai::providers::MessageRole::User => "user",
-                crate::ai::providers::MessageRole::Assistant => "assistant",
+                MessageRole::User => "user",
+                MessageRole::Assistant => "assistant",
             };
             messages.push(ChatMessage {
                 role: role.to_string(),
@@ -92,7 +92,7 @@ impl AiProvider for OpenAiClient {
         tokio::select! {
             _ = cancel.cancelled() => Err(anyhow!("cancelled")),
             res = builder.send() => {
-                let resp: ChatResponse = res?.json().await?;
+                let resp: ChatResponse = res?.error_for_status()?.json().await?;
                 Ok(resp.choices.into_iter().next()
                     .map(|c| c.message.content.trim().to_string())
                     .unwrap_or_default())

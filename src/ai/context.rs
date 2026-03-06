@@ -39,7 +39,6 @@ pub fn build_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::providers::MessageRole;
 
     #[test]
     fn builds_context_from_messages() {
