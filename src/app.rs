@@ -200,6 +200,7 @@ impl App {
                 Some(AppEvent::AiSuggestion(text)) => {
                     if self.state.input_mode == InputMode::Editing {
                         self.state.ai_suggestion = Some(text);
+                        self.state.ai_status = None;  // clear any previous error
                     }
                 }
                 Some(AppEvent::AiError(e)) => {
@@ -410,6 +411,7 @@ impl App {
             Action::ExitEditing => {
                 self.state.exit_editing();
                 self.state.ai_suggestion = None;
+                self.state.ai_status = None;
             }
             Action::SubmitMessage => {
                 let input = self.state.take_input();
@@ -443,7 +445,7 @@ impl App {
             Action::InputKey(key) => {
                 self.state.input.input(key);
                 self.state.ai_suggestion = None;
-                if self.state.input_mode == InputMode::Editing {
+                if self.ai_worker.is_some() && self.state.input_mode == InputMode::Editing {
                     self.last_keystroke = Some(Instant::now());
                 }
             }
@@ -633,6 +635,7 @@ impl App {
                 }
             }
             Action::AiSuggestRequest => {
+                self.last_keystroke = None;
                 if self.state.input_mode == InputMode::Editing {
                     let partial = self.state.input.lines().join("\n");
                     if !partial.is_empty() {
