@@ -65,6 +65,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         input_area,
         &state.input,
         state.input_mode,
+        state.ai_suggestion.as_deref(),
     );
 
     status_bar::render_status_bar(
