@@ -116,6 +116,7 @@ mod tests {
             is_group: false,
             is_pinned: false,
             is_newsletter: false,
+            is_muted: false,
         }
     }
 }

@@ -35,6 +35,8 @@ pub enum Action {
     SearchPrev,
     SearchConfirm,
     SearchClose,
+    AiSuggestAccept,   // Tab — accept ghost text suggestion
+    AiSuggestRequest,  // Ctrl+Space — on-demand trigger
     None,
 }
 
@@ -91,6 +93,8 @@ fn map_editing_mode(key: KeyEvent, enter_sends: bool) -> Action {
         (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => Action::SubmitMessage,
         // Ctrl+U always clears
         (KeyCode::Char('u'), m) if m.contains(KeyModifiers::CONTROL) => Action::ClearInput,
+        (KeyCode::Tab, _) => Action::AiSuggestAccept,
+        (KeyCode::Char(' '), m) if m.contains(KeyModifiers::CONTROL) => Action::AiSuggestRequest,
         // Everything else forwarded to TextArea
         _ => Action::InputKey(key),
     }
@@ -121,8 +125,8 @@ fn map_search_mode(key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Esc => Action::SearchClose,
         KeyCode::Enter => Action::SearchConfirm,
-        KeyCode::Char('j') | KeyCode::Down => Action::SearchNext,
-        KeyCode::Char('k') | KeyCode::Up => Action::SearchPrev,
+        KeyCode::Down => Action::SearchNext,
+        KeyCode::Up => Action::SearchPrev,
         _ => Action::SearchInput(key),
     }
 }

@@ -1,5 +1,6 @@
 use std::io;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use crossterm::{
     execute,
@@ -7,6 +8,11 @@ use crossterm::{
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
+use crate::ai::worker::{AiWorker, AiRequest};
+use crate::ai::context::RawMessage;
+use crate::ai::providers::openai::OpenAiClient;
+use crate::ai::providers::anthropic::AnthropicClient;
+use crate::ai::providers::gemini::GeminiClient;
 use crate::config::AppConfig;
 use crate::core::provider::ProviderEvent;
 use crate::core::types::{AuthStatus, MessageContent, Platform};
@@ -30,21 +36,61 @@ pub struct App {
     address_book: AddressBook,
     config: AppConfig,
     config_path: PathBuf,
+    ai_worker: Option<AiWorker>,
+    last_keystroke: Option<Instant>,
+    db_summary_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
+    db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
 }
 
 impl App {
-    pub fn new(config: AppConfig, db: Database, address_book: AddressBook, config_path: PathBuf) -> Self {
+    pub fn new(
+        config: AppConfig,
+        db: Database,
+        address_book: AddressBook,
+        config_path: PathBuf,
+        event_tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
+    ) -> Self {
+        tracing::info!(
+            enabled = config.ai.enabled,
+            provider = %config.ai.provider,
+            base_url = %config.ai.base_url,
+            model = %config.ai.model,
+            debug = config.ai.debug,
+            "AI config loaded"
+        );
+        let ai_worker = if config.ai.enabled {
+            let provider: Box<dyn crate::ai::providers::AiProvider> = match config.ai.provider.as_str() {
+                "anthropic" => Box::new(AnthropicClient::new(config.ai.api_key.clone())),
+                "gemini"    => Box::new(GeminiClient::new(config.ai.api_key.clone())),
+                _           => Box::new(OpenAiClient::new(config.ai.base_url.clone(), config.ai.api_key.clone())),
+            };
+            tracing::info!("AI worker created — autocomplete enabled");
+            Some(AiWorker::new(provider, config.ai.clone(), event_tx))
+        } else {
+            tracing::info!("AI worker NOT created — ai.enabled = false in config");
+            None
+        };
+
+        let (db_summary_tx, db_summary_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+
+        let mut state = AppState::new();
+        state.ai_debug = config.ai.debug;
+
         Self {
-            state: AppState::new(),
+            state,
             router: MessageRouter::new(),
             db,
             address_book,
             config,
             config_path,
+            ai_worker,
+            last_keystroke: None,
+            db_summary_tx,
+            db_summary_rx,
         }
     }
 
-    pub async fn run(&mut self) -> anyhow::Result<()> {
+    pub async fn run(&mut self, mut events: EventHandler) -> anyhow::Result<()> {
         // Load enter_sends preference from DB (default true)
         self.state.enter_sends = self.db
             .get_preference("enter_sends")
@@ -88,11 +134,25 @@ impl App {
                 })
                 .collect();
 
-            // Apply display names from address book
+            // Apply display names from address book (user-set, highest priority)
             if let Ok(names) = self.address_book.get_all_display_names() {
                 for chat in &mut chats {
                     if let Some(name) = names.get(&chat.id) {
                         chat.display_name = Some(name.clone());
+                    }
+                }
+            }
+            // Apply contact names to chats that still show a raw phone number
+            for chat in &mut chats {
+                if chat.display_name.is_some() {
+                    continue;
+                }
+                if let Some(phone) = Self::extract_wa_phone(&chat.id) {
+                    let is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                    if is_numeric {
+                        if let Ok(Some(contact_name)) = self.address_book.lookup_contact(phone) {
+                            chat.name = contact_name;
+                        }
                     }
                 }
             }
@@ -123,12 +183,6 @@ impl App {
             original_hook(panic_info);
         }));
 
-        // Event handler
-        let mut events = EventHandler::new(
-            self.config.tui.tick_rate_ms,
-            self.config.tui.render_rate_ms,
-        );
-
         // Main loop
         loop {
             let event = events.next().await;
@@ -139,6 +193,49 @@ impl App {
                 }
                 Some(AppEvent::Tick) => {
                     self.handle_tick();
+                    // Save any pending AI summaries to DB
+                    while let Ok((key, value)) = self.db_summary_rx.try_recv() {
+                        let _ = self.db.set_preference(&key, &value);
+                    }
+                    // AI debounce: fire request after user stops typing
+                    if let Some(t) = self.last_keystroke {
+                        let debounce = Duration::from_millis(self.config.ai.debounce_ms);
+                        if t.elapsed() >= debounce {
+                            self.last_keystroke = None;
+                            if self.state.input_mode == InputMode::Editing {
+                                let partial = self.state.input.lines().join("\n");
+                                if !partial.is_empty() {
+                                    if let Some(worker) = self.ai_worker.as_mut() {
+                                        let messages: Vec<RawMessage> = self.state.messages.iter()
+                                            .filter_map(|m| {
+                                                let text = match &m.content {
+                                                    crate::core::types::MessageContent::Text(t) => t.clone(),
+                                                    _ => return None,
+                                                };
+                                                Some(RawMessage { is_outgoing: m.is_outgoing, text })
+                                            })
+                                            .collect();
+                                        let summary = self.state.selected_chat_id()
+                                            .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                                        self.state.push_ai_log(format!(
+                                            "[debounce] → POST {}/v1/chat/completions | model={} | ctx={} msgs | input={:?}",
+                                            self.config.ai.base_url, self.config.ai.model, messages.len(),
+                                            if partial.len() > 40 { &partial[..40] } else { &partial }
+                                        ));
+                                        tracing::info!(
+                                            trigger = "debounce",
+                                            url = %format!("{}/v1/chat/completions", self.config.ai.base_url),
+                                            model = %self.config.ai.model,
+                                            context_msgs = messages.len(),
+                                            input = %partial,
+                                            "AI autocomplete request"
+                                        );
+                                        worker.request(AiRequest { partial_input: partial, messages, summary });
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 Some(AppEvent::Key(key)) => {
                     let action = map_key(key, self.state.input_mode, self.state.enter_sends);
@@ -149,6 +246,19 @@ impl App {
                 }
                 Some(AppEvent::Resize(_, _)) => {
                     // Terminal handles resize automatically
+                }
+                Some(AppEvent::AiSuggestion(text)) => {
+                    if self.state.input_mode == InputMode::Editing {
+                        tracing::info!(suggestion = %text, "AI autocomplete suggestion received");
+                        self.state.push_ai_log(format!("[suggestion] ← {:?}", text));
+                        self.state.ai_suggestion = Some(text);
+                        self.state.ai_status = None;
+                    }
+                }
+                Some(AppEvent::AiError(e)) => {
+                    tracing::info!(error = %e, "AI autocomplete error");
+                    self.state.push_ai_log(format!("[error] ← {}", e));
+                    self.state.ai_status = Some(format!("AI: {}", e));
                 }
                 Some(AppEvent::Quit) | None => {
                     break;
@@ -180,6 +290,22 @@ impl App {
                     // Persist to DB
                     if let Err(e) = self.db.insert_message(&msg) {
                         tracing::error!("Failed to insert message: {}", e);
+                    }
+
+                    // Store push_name as contact so we can name phone-number chats
+                    if !msg.is_outgoing && msg.sender != "You" && !msg.sender.is_empty() {
+                        if let Some(phone) = Self::extract_wa_phone(&msg.chat_id) {
+                            let _ = self.address_book.upsert_contact(phone, &msg.sender);
+                            // Apply to the in-memory chat if it still shows a phone number
+                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == msg.chat_id) {
+                                if chat.display_name.is_none() {
+                                    let is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                                    if is_numeric {
+                                        chat.name = msg.sender.clone();
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     // Update last_message on the chat
@@ -222,22 +348,47 @@ impl App {
                     if is_current_chat {
                         self.state.messages.push(msg.clone());
                         self.state.scroll_offset = 0; // auto-scroll to bottom
+
+                        if let Some(worker) = &self.ai_worker {
+                            if let Some(chat_id) = self.state.selected_chat_id() {
+                                let messages: Vec<crate::ai::context::RawMessage> = self.state.messages.iter()
+                                    .filter_map(|m| {
+                                        let text = match &m.content {
+                                            crate::core::types::MessageContent::Text(t) => t.clone(),
+                                            _ => return None,
+                                        };
+                                        Some(crate::ai::context::RawMessage { is_outgoing: m.is_outgoing, text })
+                                    })
+                                    .collect();
+                                worker.maybe_generate_summary(
+                                    chat_id.to_string(),
+                                    messages,
+                                    self.config.ai.summary_threshold,
+                                    self.db_summary_tx.clone(),
+                                );
+                            }
+                        }
                     }
 
-                    // Move chat to top of list (like WhatsApp)
+                    // Move chat to top of its group (pinned→top of pinned, unpinned→top of unpinned)
                     if let Some(pos) = self.state.chats.iter().position(|c| c.id == msg.chat_id) {
-                        if pos > 0 {
-                            let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
-                            let chat = self.state.chats.remove(pos);
-                            // Insert after the last pinned chat so pinned chats stay at the top
-                            let insert_pos = self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0);
+                        let selected_id = self.state.selected_chat_id().map(|s| s.to_string());
+                        let chat = self.state.chats.remove(pos);
+                        let insert_pos = if chat.is_pinned {
+                            0
+                        } else {
+                            // Top of unpinned section = one after the last pinned chat
+                            self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0)
+                        };
+                        if pos != insert_pos {
                             self.state.chats.insert(insert_pos, chat);
-                            // Keep selection on the same chat
                             if let Some(id) = selected_id {
                                 if let Some(new_pos) = self.state.chats.iter().position(|c| c.id == id) {
                                     self.state.chat_list_state.select(Some(new_pos));
                                 }
                             }
+                        } else {
+                            self.state.chats.insert(pos, chat);
                         }
                     }
                 }
@@ -268,7 +419,16 @@ impl App {
                                 existing.name = chat.name;
                             }
                         } else {
-                            self.state.chats.push(chat);
+                            // Apply address-book / contact name to newly discovered chats
+                            let mut new_chat = chat;
+                            if let Some(name) = self.resolve_contact_name(&new_chat.id) {
+                                new_chat.display_name = Some(name);
+                            } else if let Some(phone) = Self::extract_wa_phone(&new_chat.id) {
+                                if let Ok(Some(contact_name)) = self.address_book.lookup_contact(phone) {
+                                    new_chat.name = contact_name;
+                                }
+                            }
+                            self.state.chats.push(new_chat);
                         }
                     }
                     // Note: no load_selected_chat_messages() here —
@@ -354,6 +514,8 @@ impl App {
             }
             Action::ExitEditing => {
                 self.state.exit_editing();
+                self.state.ai_suggestion = None;
+                self.state.ai_status = None;
             }
             Action::SubmitMessage => {
                 let input = self.state.take_input();
@@ -386,6 +548,10 @@ impl App {
             }
             Action::InputKey(key) => {
                 self.state.input.input(key);
+                self.state.ai_suggestion = None;
+                if self.ai_worker.is_some() && self.state.input_mode == InputMode::Editing {
+                    self.last_keystroke = Some(Instant::now());
+                }
             }
             Action::ClearInput => {
                 self.state.input = TextArea::default();
@@ -493,23 +659,29 @@ impl App {
                     let chat_id = menu.chat_id.clone();
                     let new_pinned = !menu.is_pinned;
 
-                    if let Some(ChatMenuItem::TogglePin) = selected_item {
-                        // Enforce max 10 pinned chats
-                        if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
-                            self.state.close_chat_menu();
-                            return;
+                    match selected_item {
+                        Some(ChatMenuItem::TogglePin) => {
+                            // Enforce max 10 pinned chats
+                            if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
+                                self.state.close_chat_menu();
+                                return;
+                            }
+                            let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
+                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                                chat.is_pinned = new_pinned;
+                            }
+                            self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
+                            let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
+                            self.state.chat_list_state.select(Some(new_idx));
                         }
-                        // Persist to DB
-                        let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
-                        // Update in-memory chat list
-                        if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
-                            chat.is_pinned = new_pinned;
+                        Some(ChatMenuItem::ToggleMute) => {
+                            let new_muted = !menu.is_muted;
+                            let _ = self.db.set_chat_muted(&chat_id, new_muted);
+                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                                chat.is_muted = new_muted;
+                            }
                         }
-                        // Re-sort: pinned chats first, preserve relative order otherwise
-                        self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
-                        // Select the chat that was just pinned/unpinned at its new position
-                        let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
-                        self.state.chat_list_state.select(Some(new_idx));
+                        None => {}
                     }
                 }
                 self.state.close_chat_menu();
@@ -563,6 +735,48 @@ impl App {
                     self.clear_selected_unread();
                     self.send_read_receipts().await;
                     self.refresh_title();
+                }
+            }
+            Action::AiSuggestAccept => {
+                if let Some(suggestion) = self.state.ai_suggestion.take() {
+                    for ch in suggestion.chars() {
+                        self.state.input.insert_char(ch);
+                    }
+                }
+            }
+            Action::AiSuggestRequest => {
+                self.last_keystroke = None;
+                if self.state.input_mode == InputMode::Editing {
+                    let partial = self.state.input.lines().join("\n");
+                    if !partial.is_empty() {
+                        if let Some(worker) = self.ai_worker.as_mut() {
+                            let messages: Vec<RawMessage> = self.state.messages.iter()
+                                .filter_map(|m| {
+                                    let text = match &m.content {
+                                        crate::core::types::MessageContent::Text(t) => t.clone(),
+                                        _ => return None,
+                                    };
+                                    Some(RawMessage { is_outgoing: m.is_outgoing, text })
+                                })
+                                .collect();
+                            let summary = self.state.selected_chat_id()
+                                .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                            self.state.push_ai_log(format!(
+                                "[Ctrl+Space] → POST {}/v1/chat/completions | model={} | ctx={} msgs | input={:?}",
+                                self.config.ai.base_url, self.config.ai.model, messages.len(),
+                                if partial.len() > 40 { &partial[..40] } else { &partial }
+                            ));
+                            tracing::info!(
+                                trigger = "ctrl+space",
+                                url = %format!("{}/v1/chat/completions", self.config.ai.base_url),
+                                model = %self.config.ai.model,
+                                context_msgs = messages.len(),
+                                input = %partial,
+                                "AI autocomplete request"
+                            );
+                            worker.request(AiRequest { partial_input: partial, messages, summary });
+                        }
+                    }
                 }
             }
             Action::None => {}
@@ -640,5 +854,34 @@ impl App {
     fn update_title(has_unread: bool) {
         let title = if has_unread { "● zero-drift-chat" } else { "zero-drift-chat" };
         let _ = execute!(io::stdout(), SetTitle(title));
+    }
+
+    /// Extract the phone/identifier from a WhatsApp chat_id like `wa-559985213786@s.whatsapp.net`.
+    /// Returns the part before `@`, or None for non-WA or group/newsletter chats.
+    fn extract_wa_phone(chat_id: &str) -> Option<&str> {
+        let raw = chat_id.strip_prefix("wa-")?;
+        // Only direct (non-group, non-newsletter) chats
+        if raw.contains("@g.us") || raw.contains("@newsletter") || raw.contains("@lid") {
+            return None;
+        }
+        Some(raw.split('@').next().unwrap_or(raw))
+    }
+
+    /// Resolve a display name for a chat: address-book display_name first,
+    /// then contacts table by phone, then None.
+    fn resolve_contact_name(&self, chat_id: &str) -> Option<String> {
+        // 1. User-set display name wins
+        if let Ok(names) = self.address_book.get_all_display_names() {
+            if let Some(name) = names.get(chat_id) {
+                return Some(name.clone());
+            }
+        }
+        // 2. Contacts table by phone
+        if let Some(phone) = Self::extract_wa_phone(chat_id) {
+            if let Ok(Some(name)) = self.address_book.lookup_contact(phone) {
+                return Some(name);
+            }
+        }
+        None
     }
 }

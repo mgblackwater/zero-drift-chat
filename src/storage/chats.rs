@@ -33,7 +33,7 @@ impl Database {
 
     pub fn get_all_chats(&self) -> Result<Vec<UnifiedChat>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, platform, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter
+            "SELECT id, platform, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter, muted
              FROM chats ORDER BY pinned DESC, updated_at DESC",
         )?;
 
@@ -48,14 +48,15 @@ impl Database {
                 let display_name: Option<String> = row.get(6)?;
                 let pinned: i32 = row.get(7)?;
                 let is_newsletter: i32 = row.get(8)?;
+                let muted: i32 = row.get(9)?;
 
-                Ok((id, platform_str, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter))
+                Ok((id, platform_str, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter, muted))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let result = chats
             .into_iter()
-            .map(|(id, platform_str, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter)| {
+            .map(|(id, platform_str, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter, muted)| {
                 let platform = match platform_str.as_str() {
                     "WhatsApp" => Platform::WhatsApp,
                     "Telegram" => Platform::Telegram,
@@ -72,11 +73,20 @@ impl Database {
                     is_group: is_group != 0,
                     is_pinned: pinned != 0,
                     is_newsletter: is_newsletter != 0,
+                    is_muted: muted != 0,
                 }
             })
             .collect();
 
         Ok(result)
+    }
+
+    pub fn set_chat_muted(&self, chat_id: &str, muted: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE chats SET muted = ?1 WHERE id = ?2",
+            rusqlite::params![muted as i32, chat_id],
+        )?;
+        Ok(())
     }
 
     pub fn set_chat_pinned(&self, chat_id: &str, pinned: bool) -> Result<()> {

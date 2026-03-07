@@ -133,13 +133,17 @@ impl SettingsState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatMenuItem {
     TogglePin,
+    ToggleMute,
 }
 
 impl ChatMenuItem {
-    pub fn label(&self, is_pinned: bool) -> &'static str {
+    pub fn label(&self, is_pinned: bool, is_muted: bool) -> &'static str {
         match self {
             ChatMenuItem::TogglePin => {
                 if is_pinned { "Unpin" } else { "Pin" }
+            }
+            ChatMenuItem::ToggleMute => {
+                if is_muted { "Unmute" } else { "Mute" }
             }
         }
     }
@@ -149,18 +153,20 @@ pub struct ChatMenuState {
     pub chat_id: String,
     pub chat_name: String,
     pub is_pinned: bool,
+    pub is_muted: bool,
     pub selected: usize,
     pub items: Vec<ChatMenuItem>,
 }
 
 impl ChatMenuState {
-    pub fn new(chat_id: String, chat_name: String, is_pinned: bool) -> Self {
+    pub fn new(chat_id: String, chat_name: String, is_pinned: bool, is_muted: bool) -> Self {
         Self {
             chat_id,
             chat_name,
             is_pinned,
+            is_muted,
             selected: 0,
-            items: vec![ChatMenuItem::TogglePin],
+            items: vec![ChatMenuItem::TogglePin, ChatMenuItem::ToggleMute],
         }
     }
 
@@ -211,6 +217,10 @@ pub struct AppState {
     pub settings_state: Option<SettingsState>,
     pub chat_menu_state: Option<ChatMenuState>,
     pub search_state: Option<SearchState>,
+    pub ai_suggestion: Option<String>,
+    pub ai_status: Option<String>,
+    pub ai_debug: bool,
+    pub ai_debug_log: Vec<String>,
     pub enter_sends: bool,
     /// Number of unread messages at the tail of `messages` when a chat was opened.
     pub new_message_count: usize,
@@ -236,6 +246,10 @@ impl AppState {
             settings_state: None,
             chat_menu_state: None,
             search_state: None,
+            ai_suggestion: None,
+            ai_status: None,
+            ai_debug: false,
+            ai_debug_log: Vec::new(),
             enter_sends: true,
             new_message_count: 0,
         }
@@ -331,6 +345,7 @@ impl AppState {
                     chat.id.clone(),
                     chat.display_name.clone().unwrap_or_else(|| chat.name.clone()),
                     chat.is_pinned,
+                    chat.is_muted,
                 ));
                 self.input_mode = InputMode::ChatMenu;
             }
@@ -342,7 +357,16 @@ impl AppState {
         self.input_mode = InputMode::Normal;
     }
 
+    pub fn push_ai_log(&mut self, entry: String) {
+        if self.ai_debug {
+            self.ai_debug_log.push(entry);
+            if self.ai_debug_log.len() > 6 {
+                self.ai_debug_log.remove(0);
+            }
+        }
+    }
+
     pub fn has_unread(&self) -> bool {
-        self.chats.iter().any(|c| c.unread_count > 0)
+        self.chats.iter().any(|c| !c.is_muted && c.unread_count > 0)
     }
 }

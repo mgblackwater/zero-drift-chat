@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub mock_provider: MockProviderConfig,
     #[serde(default)]
     pub whatsapp: WhatsAppConfig,
+    #[serde(default)]
+    pub ai: AiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -94,6 +96,63 @@ fn default_message_interval() -> u64 {
     3
 }
 
+fn default_ai_provider() -> String {
+    "ollama".to_string()
+}
+fn default_ai_base_url() -> String {
+    "http://localhost:11434".to_string()
+}
+fn default_ai_model() -> String {
+    "qwen2.5:1.5b-instruct".to_string()
+}
+fn default_context_messages() -> usize {
+    10
+}
+fn default_summary_threshold() -> usize {
+    50
+}
+fn default_debounce_ms() -> u64 {
+    500
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_ai_provider")]
+    pub provider: String,
+    #[serde(default = "default_ai_base_url")]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default = "default_ai_model")]
+    pub model: String,
+    #[serde(default = "default_context_messages")]
+    pub context_messages: usize,
+    #[serde(default = "default_summary_threshold")]
+    pub summary_threshold: usize,
+    #[serde(default = "default_debounce_ms")]
+    pub debounce_ms: u64,
+    #[serde(default)]
+    pub debug: bool,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: default_ai_provider(),
+            base_url: default_ai_base_url(),
+            api_key: None,
+            model: default_ai_model(),
+            context_messages: default_context_messages(),
+            summary_threshold: default_summary_threshold(),
+            debounce_ms: default_debounce_ms(),
+            debug: false,
+        }
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -101,6 +160,7 @@ impl Default for AppConfig {
             tui: TuiConfig::default(),
             mock_provider: MockProviderConfig::default(),
             whatsapp: WhatsAppConfig::default(),
+            ai: AiConfig::default(),
         }
     }
 }
@@ -138,7 +198,8 @@ impl AppConfig {
     pub fn load(path: &Path) -> Result<Self> {
         if path.exists() {
             let content = std::fs::read_to_string(path)?;
-            let config: AppConfig = toml::from_str(&content)?;
+            let config: AppConfig = toml::from_str(&content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse config {}: {}", path.display(), e))?;
             Ok(config)
         } else {
             Ok(Self::default())
@@ -157,5 +218,32 @@ impl AppConfig {
         );
         std::fs::write(path, content)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_ai_config() {
+        let toml = r#"
+[ai]
+enabled = true
+provider = "ollama"
+base_url = "http://localhost:8080"
+model = "qwen2.5-1.5b-instruct-q4_k_m"
+context_messages = 10
+summary_threshold = 50
+debounce_ms = 500
+debug = true
+"#;
+        let result = toml::from_str::<AppConfig>(toml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let cfg = result.unwrap();
+        assert!(cfg.ai.enabled, "ai.enabled should be true");
+        assert_eq!(cfg.ai.base_url, "http://localhost:8080");
+        assert_eq!(cfg.ai.model, "qwen2.5-1.5b-instruct-q4_k_m");
+        assert!(cfg.ai.debug);
     }
 }

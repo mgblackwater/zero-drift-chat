@@ -17,9 +17,16 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
         String::new()
     };
     let name = chat.display_name.as_deref().unwrap_or(&chat.name).to_string();
-    // Embed selector so column layout is always consistent regardless of which list is active
     let selector = if is_selected { "▶ " } else { "  " };
     let pin_tag = if chat.is_pinned { "* " } else { "  " };
+
+    // Muted chats render dimmed
+    let (name_color, unread_color) = if chat.is_muted {
+        (Color::DarkGray, Color::Gray)
+    } else {
+        (Color::White, Color::Yellow)
+    };
+
     let mut spans = vec![
         Span::raw(selector),
         Span::styled(pin_tag.to_string(), Style::default().fg(Color::Yellow)),
@@ -30,8 +37,8 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
         spans.push(Span::styled(tag, Style::default().fg(Color::DarkGray)));
     }
     spans.push(Span::raw(" "));
-    spans.push(Span::styled(name, Style::default().fg(Color::White)));
-    spans.push(Span::styled(unread, Style::default().fg(Color::Yellow)));
+    spans.push(Span::styled(name, Style::default().fg(name_color)));
+    spans.push(Span::styled(unread, Style::default().fg(unread_color)));
     ListItem::new(Line::from(spans))
 }
 
@@ -59,7 +66,7 @@ pub fn render_chat_list(
     } else {
         let total_unread: u32 = chats
             .iter()
-            .filter(|c| !c.is_newsletter)
+            .filter(|c| !c.is_newsletter && !c.is_muted)
             .map(|c| c.unread_count)
             .sum();
         let t = if total_unread > 0 {
