@@ -366,6 +366,13 @@ fn handle_wa_event(
                 }
             }
         }
+        Event::MarkChatAsReadUpdate(update) => {
+            if update.action.read == Some(true) {
+                let chat_id = jid_to_chat_id(&update.jid, jid_cache);
+                tracing::debug!("MarkChatAsRead sync from other device: {}", chat_id);
+                let _ = tx.send(ProviderEvent::SelfRead { chat_id });
+            }
+        }
         Event::OfflineSyncCompleted(_) => {
             tracing::info!("WhatsApp offline sync completed");
             let _ = tx.send(ProviderEvent::SyncCompleted);
