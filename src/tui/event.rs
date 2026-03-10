@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 #[derive(Debug)]
 pub enum AppEvent {
     Key(crossterm::event::KeyEvent),
+    Paste(String),
     Resize(u16, u16),
     Tick,
     Render,
@@ -53,6 +54,11 @@ impl EventHandler {
                                     if task_tx.send(AppEvent::Key(key)).is_err() {
                                         break;
                                     }
+                                }
+                            }
+                            Event::Paste(text) => {
+                                if task_tx.send(AppEvent::Paste(text)).is_err() {
+                                    break;
                                 }
                             }
                             Event::Resize(w, h) => {

@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::{
     execute,
+    event::{DisableBracketedPaste, EnableBracketedPaste},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -171,7 +172,7 @@ impl App {
         // Set up terminal
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
+        execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
@@ -179,7 +180,7 @@ impl App {
         let original_hook = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |panic_info| {
             let _ = disable_raw_mode();
-            let _ = execute!(io::stdout(), LeaveAlternateScreen);
+            let _ = execute!(io::stdout(), DisableBracketedPaste, LeaveAlternateScreen);
             original_hook(panic_info);
         }));
 
@@ -247,6 +248,15 @@ impl App {
                 Some(AppEvent::Resize(_, _)) => {
                     // Terminal handles resize automatically
                 }
+                Some(AppEvent::Paste(text)) => {
+                    if self.state.input_mode == InputMode::Editing {
+                        self.state.input.insert_str(&text);
+                        self.state.ai_suggestion = None;
+                        if self.ai_worker.is_some() {
+                            self.last_keystroke = Some(Instant::now());
+                        }
+                    }
+                }
                 Some(AppEvent::AiSuggestion(text)) => {
                     if self.state.input_mode == InputMode::Editing {
                         tracing::info!(suggestion = %text, "AI autocomplete suggestion received");
@@ -271,6 +281,7 @@ impl App {
         disable_raw_mode()?;
         execute!(
             terminal.backend_mut(),
+            DisableBracketedPaste,
             LeaveAlternateScreen
         )?;
         Self::update_title(false);   // restore clean title on exit
