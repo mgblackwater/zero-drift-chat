@@ -33,6 +33,8 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
     ];
     if chat.is_newsletter {
         spans.push(Span::styled("[NL]", Style::default().fg(Color::Cyan)));
+    } else if chat.is_group {
+        spans.push(Span::styled("[GP]", Style::default().fg(Color::Magenta)));
     } else {
         spans.push(Span::styled(tag, Style::default().fg(Color::DarkGray)));
     }
