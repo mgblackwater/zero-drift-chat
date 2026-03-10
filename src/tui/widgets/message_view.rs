@@ -1,6 +1,6 @@
 use chrono::Local;
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
@@ -123,13 +123,26 @@ pub fn render_message_view(
             (Color::Cyan, Color::Gray)
         };
 
-        let header = Line::from(vec![
-            Span::styled(
-                format!("{} ", msg.sender),
-                Style::default().fg(sender_color),
-            ),
-            Span::styled(time, Style::default().fg(Color::DarkGray)),
-        ]);
+        let header = if msg.is_outgoing {
+            // Right-aligned: "10:02  You" pushed to the right edge
+            Line::from(vec![
+                Span::styled(time, Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("  {}", msg.sender),
+                    Style::default().fg(sender_color),
+                ),
+            ])
+            .alignment(Alignment::Right)
+        } else {
+            // Left-aligned: "You 10:02" (unchanged)
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", msg.sender),
+                    Style::default().fg(sender_color),
+                ),
+                Span::styled(time, Style::default().fg(Color::DarkGray)),
+            ])
+        };
 
         lines.push(header);
         let url_style = Style::default()
@@ -137,25 +150,30 @@ pub fn render_message_view(
             .add_modifier(Modifier::UNDERLINED);
 
         for text_line in msg.content.as_text().split('\n') {
-            if !text_line.contains("http://") && !text_line.contains("https://") {
+            let line = if !text_line.contains("http://") && !text_line.contains("https://") {
                 // Fast path: no URL prefix — single span, no allocation
-                lines.push(Line::from(Span::styled(
+                Line::from(Span::styled(
                     text_line.to_string(),
                     Style::default().fg(msg_color),
-                )));
-                continue;
+                ))
+            } else {
+                let spans: Vec<Span> = split_line_with_urls(text_line)
+                    .into_iter()
+                    .map(|(seg, is_url)| {
+                        if is_url {
+                            Span::styled(seg.to_string(), url_style)
+                        } else {
+                            Span::styled(seg.to_string(), Style::default().fg(msg_color))
+                        }
+                    })
+                    .collect();
+                Line::from(spans)
+            };
+            if msg.is_outgoing {
+                lines.push(line.alignment(Alignment::Right));
+            } else {
+                lines.push(line);
             }
-            let spans: Vec<Span> = split_line_with_urls(text_line)
-                .into_iter()
-                .map(|(seg, is_url)| {
-                    if is_url {
-                        Span::styled(seg.to_string(), url_style)
-                    } else {
-                        Span::styled(seg.to_string(), Style::default().fg(msg_color))
-                    }
-                })
-                .collect();
-            lines.push(Line::from(spans));
         }
         lines.push(Line::from("")); // spacing
     }
