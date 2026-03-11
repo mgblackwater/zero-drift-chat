@@ -43,6 +43,7 @@ pub struct App {
     db_summary_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
     db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
     schedule_status_ticks: u8,
+    telegram_auth_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::providers::telegram::AuthInput>>,
 }
 
 impl App {
@@ -91,6 +92,7 @@ impl App {
             db_summary_tx,
             db_summary_rx,
             schedule_status_ticks: 0,
+            telegram_auth_tx: None,
         }
     }
 
@@ -121,6 +123,30 @@ impl App {
             self.router.register_provider(Box::new(wa));
         }
 
+        if self.config.telegram.enabled {
+            let api_id = self.config.telegram.api_id;
+            let api_hash = self.config.telegram.api_hash.clone();
+
+            if api_id == 0 || api_hash.is_empty() {
+                tracing::error!(
+                    "Telegram enabled but api_id or api_hash not configured — skipping"
+                );
+            } else {
+                let session_path = format!(
+                    "{}/telegram-session.db",
+                    self.config.general.data_dir
+                );
+                let tg = crate::providers::telegram::TelegramProvider::new(
+                    api_id,
+                    api_hash,
+                    session_path,
+                );
+                // Stash the auth_tx so we can forward TUI input to the provider's auth task
+                self.telegram_auth_tx = Some(tg.auth_tx.clone());
+                self.router.register_provider(Box::new(tg));
+            }
+        }
+
         // Start all providers
         self.router.start_all().await?;
 
@@ -134,6 +160,7 @@ impl App {
                 .filter(|c| match c.platform {
                     Platform::Mock => self.config.mock_provider.enabled,
                     Platform::WhatsApp => self.config.whatsapp.enabled,
+                    Platform::Telegram => self.config.telegram.enabled,
                     _ => true,
                 })
                 .collect();
@@ -277,8 +304,21 @@ impl App {
                     self.state.push_ai_log(format!("[error] ← {}", e));
                     self.state.ai_status = Some(format!("AI: {}", e));
                 }
-                Some(AppEvent::AuthInput(_, _)) => {
-                    // TODO(Task 11): forward auth input to appropriate provider's auth_tx
+                Some(AppEvent::AuthInput(platform, value)) => {
+                    if platform == Platform::Telegram {
+                        if let (Some(ref tx), Some(ref auth)) =
+                            (&self.telegram_auth_tx, &self.state.telegram_auth_state)
+                        {
+                            use crate::providers::telegram::AuthInput;
+                            use crate::tui::app_state::TelegramAuthStage;
+                            let auth_input = match auth.stage {
+                                TelegramAuthStage::Phone => AuthInput::Phone(value),
+                                TelegramAuthStage::Otp => AuthInput::Otp(value),
+                                TelegramAuthStage::Password => AuthInput::Password(value),
+                            };
+                            let _ = tx.send(auth_input);
+                        }
+                    }
                 }
                 Some(AppEvent::Quit) | None => {
                     break;
@@ -493,6 +533,18 @@ impl App {
                             _ => {}
                         }
                     }
+                    if platform == Platform::Telegram {
+                        match status {
+                            AuthStatus::Authenticated => {
+                                self.state.close_telegram_auth();
+                            }
+                            AuthStatus::Failed => {
+                                self.state.close_telegram_auth();
+                                tracing::error!("Telegram authentication failed");
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 ProviderEvent::AuthQrCode(code) => {
                     tracing::info!("QR code received for WhatsApp pairing");
@@ -515,10 +567,29 @@ impl App {
                     self.load_selected_chat_messages();
                     self.refresh_title();
                 }
-                ProviderEvent::AuthPhonePrompt(_, _)
-                | ProviderEvent::AuthOtpPrompt(_, _)
-                | ProviderEvent::AuthPasswordPrompt(_, _) => {
-                    // TODO(Task 11): route to TUI auth input flow
+                ProviderEvent::AuthPhonePrompt(platform, error_hint) => {
+                    if platform == Platform::Telegram {
+                        self.state.open_telegram_auth(
+                            crate::tui::app_state::TelegramAuthStage::Phone,
+                            error_hint,
+                        );
+                    }
+                }
+                ProviderEvent::AuthOtpPrompt(platform, error_hint) => {
+                    if platform == Platform::Telegram {
+                        self.state.open_telegram_auth(
+                            crate::tui::app_state::TelegramAuthStage::Otp,
+                            error_hint,
+                        );
+                    }
+                }
+                ProviderEvent::AuthPasswordPrompt(platform, error_hint) => {
+                    if platform == Platform::Telegram {
+                        self.state.open_telegram_auth(
+                            crate::tui::app_state::TelegramAuthStage::Password,
+                            error_hint,
+                        );
+                    }
                 }
             }
         }
@@ -956,11 +1027,40 @@ impl App {
                 self.state.schedule_list_state = None;
                 self.state.input_mode = InputMode::Normal;
             }
-            Action::TelegramAuthChar(_)
-            | Action::TelegramAuthBackspace
-            | Action::TelegramAuthSubmit
-            | Action::TelegramAuthCancel => {
-                // Handled by TelegramAuth UI component (future task)
+            Action::TelegramAuthChar(c) => {
+                if let Some(ref mut auth) = self.state.telegram_auth_state {
+                    if !c.is_control() {
+                        auth.input.push(c);
+                    }
+                }
+            }
+            Action::TelegramAuthBackspace => {
+                if let Some(ref mut auth) = self.state.telegram_auth_state {
+                    auth.input.pop();
+                }
+            }
+            Action::TelegramAuthSubmit => {
+                let value = self.state.take_telegram_auth_input();
+                if !value.is_empty() {
+                    if let (Some(ref tx), Some(ref auth)) =
+                        (&self.telegram_auth_tx, &self.state.telegram_auth_state)
+                    {
+                        use crate::providers::telegram::AuthInput;
+                        use crate::tui::app_state::TelegramAuthStage;
+                        let auth_input = match auth.stage {
+                            TelegramAuthStage::Phone => AuthInput::Phone(value),
+                            TelegramAuthStage::Otp => AuthInput::Otp(value),
+                            TelegramAuthStage::Password => AuthInput::Password(value),
+                        };
+                        let _ = tx.send(auth_input);
+                    }
+                    // Close overlay; it will re-open if auth needs another step
+                    self.state.close_telegram_auth();
+                }
+            }
+            Action::TelegramAuthCancel => {
+                self.state.close_telegram_auth();
+                tracing::info!("Telegram auth cancelled by user");
             }
             Action::None => {}
         }
