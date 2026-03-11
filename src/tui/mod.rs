@@ -4,4 +4,5 @@ pub mod event;
 pub mod keybindings;
 pub mod osc8;
 pub mod render;
+pub mod time_parse;
 pub mod widgets;
