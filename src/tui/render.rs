@@ -9,6 +9,7 @@ use ratatui::{
 use super::app_state::{AppState, InputMode};
 use super::widgets::{
     self, chat_list, input_bar, message_view, qr_overlay, settings_overlay, status_bar,
+    telegram_auth_overlay,
 };
 
 pub fn draw(f: &mut Frame, state: &mut AppState) {
@@ -186,4 +187,8 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
             widgets::schedule_overlay::render_schedule_list_overlay(f, sl, &chat_names);
         }
     }
-}
+
+    // Render Telegram auth overlay on top if active
+    if let Some(ref auth_state) = state.telegram_auth_state {
+        telegram_auth_overlay::render_telegram_auth_overlay(f, auth_state);
+    }
