@@ -31,6 +31,8 @@ pub fn render_status_bar(
         InputMode::ChatMenu => "j/k:Navigate | p/Enter:Confirm | Esc:Close",
         InputMode::Searching => "Type to filter | j/k:Navigate | Enter:Open+Insert | Esc:Cancel",
         InputMode::MessageSelect => "j/k:Navigate | y/Enter:Copy | Esc:Cancel",
+        InputMode::SchedulePrompt => "Type delay (e.g. '5m', '2h', 'tomorrow 9am') | Enter:Confirm | Esc:Cancel",
+        InputMode::ScheduleList => "j/k:Navigate | d:Delete | Esc/q:Close",
     };
 
     // Mode pill: colored badge on the left, rest of bar stays on black
@@ -42,6 +44,8 @@ pub fn render_status_bar(
         InputMode::ChatMenu => (" MENU ", Color::Yellow, Color::Black),
         InputMode::Searching => (" SEARCH ", Color::Cyan, Color::Black),
         InputMode::MessageSelect => (" SELECT ", Color::Blue, Color::White),
+        InputMode::SchedulePrompt => (" SCHEDULE ", Color::Green, Color::Black),
+        InputMode::ScheduleList => (" SCHEDULED ", Color::Green, Color::Black),
     };
 
     let sep = Style::default().fg(Color::DarkGray);

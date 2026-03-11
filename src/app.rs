@@ -822,6 +822,16 @@ impl App {
             Action::MessageSelectExit => {
                 self.state.exit_message_select();
             }
+            // Schedule actions — handled in Task 4
+            Action::ScheduleMessage
+            | Action::ScheduleInput(_)
+            | Action::ScheduleConfirm
+            | Action::ScheduleCancel
+            | Action::OpenScheduleList
+            | Action::ScheduleListNext
+            | Action::ScheduleListPrev
+            | Action::ScheduleListDelete
+            | Action::ScheduleListClose => {}
             Action::None => {}
         }
     }

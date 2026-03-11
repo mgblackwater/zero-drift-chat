@@ -13,6 +13,8 @@ pub enum InputMode {
     ChatMenu,
     Searching,
     MessageSelect,
+    SchedulePrompt,
+    ScheduleList,
 }
 
 // --- Settings overlay types ---
@@ -209,6 +211,54 @@ impl SearchState {
     }
 }
 
+use crate::core::types::Platform;
+use crate::storage::ScheduledMessage;
+
+#[derive(Debug, Clone)]
+pub struct SchedulePromptState {
+    pub query: String,
+    pub message_text: String, // the message to be scheduled
+    pub chat_id: String,
+    pub platform: Platform,
+}
+
+impl SchedulePromptState {
+    pub fn new(message_text: String, chat_id: String, platform: Platform) -> Self {
+        Self {
+            query: String::new(),
+            message_text,
+            chat_id,
+            platform,
+        }
+    }
+}
+
+pub struct ScheduleListState {
+    pub messages: Vec<ScheduledMessage>,
+    pub selected: usize,
+}
+
+impl ScheduleListState {
+    pub fn new(messages: Vec<ScheduledMessage>) -> Self {
+        Self {
+            messages,
+            selected: 0,
+        }
+    }
+
+    pub fn select_next(&mut self) {
+        if !self.messages.is_empty() && self.selected < self.messages.len() - 1 {
+            self.selected += 1;
+        }
+    }
+
+    pub fn select_prev(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivePanel {
     ChatList,
@@ -241,6 +291,9 @@ pub struct AppState {
     pub copy_status: Option<String>,
     /// Index into `messages` of the currently highlighted message in MessageSelect mode.
     pub selected_message_idx: Option<usize>,
+    pub schedule_prompt_state: Option<SchedulePromptState>,
+    pub schedule_list_state: Option<ScheduleListState>,
+    pub schedule_status: Option<String>, // flash message for scheduling feedback
 }
 
 impl AppState {
@@ -271,6 +324,9 @@ impl AppState {
             new_message_count: 0,
             copy_status: None,
             selected_message_idx: None,
+            schedule_prompt_state: None,
+            schedule_list_state: None,
+            schedule_status: None,
         }
     }
 
