@@ -74,11 +74,16 @@ pub fn render_schedule_list_overlay(
                 .cloned()
                 .unwrap_or_else(|| msg.chat_id.clone());
             let platform_tag = format!("[{}] ", msg.platform);
-            let preview = msg.content.as_text();
-            let preview = if preview.len() > 40 {
-                &preview[..40]
+            let preview_full = msg.content.as_text();
+            let preview = if preview_full.chars().count() > 40 {
+                let end = preview_full
+                    .char_indices()
+                    .nth(40)
+                    .map(|(i, _)| i)
+                    .unwrap_or(preview_full.len());
+                &preview_full[..end]
             } else {
-                preview
+                preview_full
             };
             let time_str = format!("→ {}", format_local_time(&msg.send_at));
 

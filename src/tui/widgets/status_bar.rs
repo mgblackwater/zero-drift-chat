@@ -33,7 +33,7 @@ pub fn render_status_bar(
         InputMode::Searching => "Type to filter | j/k:Navigate | Enter:Open+Insert | Esc:Cancel",
         InputMode::MessageSelect => "j/k:Navigate | y/Enter:Copy | Esc:Cancel",
         InputMode::SchedulePrompt => "Type delay (e.g. '5m', '2h', 'tomorrow 9am') | Enter:Confirm | Esc:Cancel",
-        InputMode::ScheduleList => "j/k:Navigate | d:Delete | Esc/q:Close",
+        InputMode::ScheduleList => "j/k:Navigate | d:Cancel | Esc/q:Close",
     };
 
     // Mode pill: colored badge on the left, rest of bar stays on black
