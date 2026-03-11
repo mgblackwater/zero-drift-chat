@@ -204,6 +204,8 @@ impl App {
 
         // Set up terminal
         enable_raw_mode()?;
+        // EventStream::new() requires raw mode to be active — start the task now.
+        events.start();
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
         let backend = CrosstermBackend::new(stdout);

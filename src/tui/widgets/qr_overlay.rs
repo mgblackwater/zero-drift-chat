@@ -62,10 +62,7 @@ pub fn render_qr_overlay(f: &mut Frame, qr_string: &str) {
                 (false, true) => ('▄', Color::Black, Color::White),
                 (false, false) => (' ', Color::White, Color::White),
             };
-            spans.push(Span::styled(
-                ch.to_string(),
-                Style::default().fg(fg).bg(bg),
-            ));
+            spans.push(Span::styled(ch.to_string(), Style::default().fg(fg).bg(bg)));
         }
 
         // Quiet zone right

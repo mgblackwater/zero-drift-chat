@@ -16,7 +16,11 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
     } else {
         String::new()
     };
-    let name = chat.display_name.as_deref().unwrap_or(&chat.name).to_string();
+    let name = chat
+        .display_name
+        .as_deref()
+        .unwrap_or(&chat.name)
+        .to_string();
     let selector = if is_selected { "▶ " } else { "  " };
     let pin_tag = if chat.is_pinned { "* " } else { "  " };
 
@@ -90,7 +94,10 @@ pub fn render_chat_list(
     let selected = list_state.selected().unwrap_or(0);
     let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
 
-    let highlight = Style::default().bg(Color::Blue).fg(Color::White).add_modifier(Modifier::BOLD);
+    let highlight = Style::default()
+        .bg(Color::Blue)
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
 
     if pinned_count == 0 {
         // No pinned chats — plain scrollable list
@@ -108,10 +115,7 @@ pub fn render_chat_list(
     // Split inner area: fixed pinned section on top, scrollable unpinned below
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(pinned_count as u16),
-            Constraint::Min(0),
-        ])
+        .constraints([Constraint::Length(pinned_count as u16), Constraint::Min(0)])
         .split(inner);
 
     // --- Pinned section (always visible, no scroll) ---
@@ -133,7 +137,12 @@ pub fn render_chat_list(
         .iter()
         .filter(|c| !c.is_pinned)
         .enumerate()
-        .map(|(i, chat)| make_item(chat, selected >= pinned_count && i == selected - pinned_count))
+        .map(|(i, chat)| {
+            make_item(
+                chat,
+                selected >= pinned_count && i == selected - pinned_count,
+            )
+        })
         .collect();
     let mut unpinned_state = ListState::default();
     if selected >= pinned_count {

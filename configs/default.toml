@@ -17,10 +17,9 @@ enabled = true
 # phone_number = "+1234567890"
 
 [telegram]
-enabled = false
-# api_id and api_hash obtained from https://my.telegram.org (API development tools)
-# api_id = 12345678
-# api_hash = ""
+enabled = true
+api_id = 30093522
+api_hash = "484eb075bba00e91b0a88a80ffef7656"
 
 [ai]
 enabled = true

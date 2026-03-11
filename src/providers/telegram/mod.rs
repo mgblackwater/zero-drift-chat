@@ -1,14 +1,18 @@
 pub mod convert;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
+use futures::future::BoxFuture;
 use grammers_client::client::UpdatesConfiguration;
 use grammers_client::peer::Peer;
 use grammers_client::{Client, SenderPool, SignInError};
-use grammers_client::update::Update;
-use grammers_session::storages::SqliteSession;
-use tokio::sync::mpsc;
+use grammers_session::{Session, SessionData};
+use grammers_session::types::{DcOption, PeerId, PeerInfo, UpdateState, UpdatesState};
+use serde::{Deserialize, Serialize};
+use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 
 use crate::core::error::Result;
@@ -29,12 +33,189 @@ pub enum AuthInput {
     Password(String),
 }
 
+// ---------------------------------------------------------------------------
+// JSON-serializable mirror of SessionData (SessionData itself lacks serde).
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize)]
+struct SessionSnapshot {
+    home_dc: i32,
+    dc_options: HashMap<i32, DcOption>,
+    peer_infos: HashMap<PeerId, PeerInfo>,
+    updates_state: UpdatesState,
+}
+
+impl From<&SessionData> for SessionSnapshot {
+    fn from(d: &SessionData) -> Self {
+        Self {
+            home_dc: d.home_dc,
+            dc_options: d.dc_options.clone(),
+            peer_infos: d.peer_infos.clone(),
+            updates_state: d.updates_state.clone(),
+        }
+    }
+}
+
+impl From<SessionSnapshot> for SessionData {
+    fn from(s: SessionSnapshot) -> Self {
+        Self {
+            home_dc: s.home_dc,
+            dc_options: s.dc_options,
+            peer_infos: s.peer_infos,
+            updates_state: s.updates_state,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Persistent session: wraps SessionData in an Arc<RwLock> so we can snapshot
+// it to JSON at any time while also satisfying the grammers Session trait.
+// ---------------------------------------------------------------------------
+
+#[derive(Clone)]
+pub struct PersistentSession(Arc<RwLock<SessionData>>);
+
+impl PersistentSession {
+    pub fn new(data: SessionData) -> Self {
+        Self(Arc::new(RwLock::new(data)))
+    }
+
+    pub fn snapshot(&self) -> SessionSnapshot {
+        SessionSnapshot::from(&*self.0.read().unwrap())
+    }
+}
+
+impl Session for PersistentSession {
+    fn home_dc_id(&self) -> i32 {
+        self.0.read().unwrap().home_dc
+    }
+
+    fn set_home_dc_id(&self, dc_id: i32) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            self.0.write().unwrap().home_dc = dc_id;
+        })
+    }
+
+    fn dc_option(&self, dc_id: i32) -> Option<DcOption> {
+        self.0.read().unwrap().dc_options.get(&dc_id).cloned()
+    }
+
+    fn set_dc_option(&self, dc_option: &DcOption) -> BoxFuture<'_, ()> {
+        let dc_option = dc_option.clone();
+        Box::pin(async move {
+            self.0
+                .write()
+                .unwrap()
+                .dc_options
+                .insert(dc_option.id, dc_option);
+        })
+    }
+
+    fn peer(&self, peer: PeerId) -> BoxFuture<'_, Option<PeerInfo>> {
+        Box::pin(async move {
+            self.0.read().unwrap().peer_infos.get(&peer).cloned()
+        })
+    }
+
+    fn cache_peer(&self, peer: &PeerInfo) -> BoxFuture<'_, ()> {
+        let peer = peer.clone();
+        Box::pin(async move {
+            use grammers_session::types::PeerId as SessionPeerId;
+            let id: SessionPeerId = peer.id();
+            self.0
+                .write()
+                .unwrap()
+                .peer_infos
+                .entry(id)
+                .or_insert_with(|| peer.clone())
+                .extend_info(&peer);
+        })
+    }
+
+    fn updates_state(&self) -> BoxFuture<'_, UpdatesState> {
+        Box::pin(async move { self.0.read().unwrap().updates_state.clone() })
+    }
+
+    fn set_update_state(&self, update: UpdateState) -> BoxFuture<'_, ()> {
+        Box::pin(async move {
+            let mut data = self.0.write().unwrap();
+            match update {
+                UpdateState::All(updates_state) => {
+                    data.updates_state = updates_state;
+                }
+                UpdateState::Primary { pts, date, seq } => {
+                    data.updates_state.pts = pts;
+                    data.updates_state.date = date;
+                    data.updates_state.seq = seq;
+                }
+                UpdateState::Secondary { qts } => {
+                    data.updates_state.qts = qts;
+                }
+                UpdateState::Channel { id, pts } => {
+                    use grammers_session::types::ChannelState;
+                    data.updates_state.channels.retain(|c| c.id != id);
+                    data.updates_state.channels.push(ChannelState { id, pts });
+                }
+            }
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Session load / save helpers.
+// ---------------------------------------------------------------------------
+
+fn load_session(path: &PathBuf) -> PersistentSession {
+    if let Ok(bytes) = std::fs::read(path) {
+        match serde_json::from_slice::<SessionSnapshot>(&bytes) {
+            Ok(snapshot) => {
+                tracing::info!("Telegram: loaded session from {}", path.display());
+                return PersistentSession::new(SessionData::from(snapshot));
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Telegram: failed to parse session JSON ({}), starting fresh",
+                    e
+                );
+            }
+        }
+    } else {
+        tracing::info!("Telegram: no existing session file, starting fresh");
+    }
+    PersistentSession::new(SessionData::default())
+}
+
+fn save_session(session: &PersistentSession, path: &PathBuf) {
+    let snapshot = session.snapshot();
+    match serde_json::to_vec_pretty(&snapshot) {
+        Ok(bytes) => {
+            if let Err(e) = std::fs::write(path, &bytes) {
+                tracing::error!(
+                    "Telegram: failed to write session to {}: {}",
+                    path.display(),
+                    e
+                );
+            } else {
+                tracing::info!("Telegram: session saved to {}", path.display());
+            }
+        }
+        Err(e) => {
+            tracing::error!("Telegram: failed to serialize session: {}", e);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Provider struct.
+// ---------------------------------------------------------------------------
+
 pub struct TelegramProvider {
     api_id: i32,
     api_hash: String,
-    session_path: String,
+    session_path: PathBuf,
 
-    client: Option<Client>,
+    /// Shared client handle — set by the background task once connected.
+    client: Arc<TokioMutex<Option<Client>>>,
     peer_cache: PeerCache,
     auth_status: AuthStatus,
 
@@ -42,9 +223,8 @@ pub struct TelegramProvider {
     pub auth_tx: mpsc::UnboundedSender<AuthInput>,
     auth_rx: Option<mpsc::UnboundedReceiver<AuthInput>>,
 
-    /// Background task handles (runner + update loop).
+    /// Background task handle (runs connect+auth+update loop).
     runner_handle: Option<JoinHandle<()>>,
-    update_handle: Option<JoinHandle<()>>,
 }
 
 impl TelegramProvider {
@@ -53,14 +233,13 @@ impl TelegramProvider {
         Self {
             api_id,
             api_hash,
-            session_path,
-            client: None,
+            session_path: PathBuf::from(session_path),
+            client: Arc::new(TokioMutex::new(None)),
             peer_cache: PeerCache::new(),
             auth_status: AuthStatus::NotAuthenticated,
             auth_tx,
             auth_rx: Some(auth_rx),
             runner_handle: None,
-            update_handle: None,
         }
     }
 
@@ -119,7 +298,10 @@ impl TelegramProvider {
                 Err(SignInError::InvalidCode) => {
                     otp_retries += 1;
                     if otp_retries >= MAX_AUTH_RETRIES {
-                        let _ = tx.send(ProviderEvent::AuthStatusChanged(Platform::Telegram, AuthStatus::Failed));
+                        let _ = tx.send(ProviderEvent::AuthStatusChanged(
+                            Platform::Telegram,
+                            AuthStatus::Failed,
+                        ));
                         return Err(anyhow::anyhow!("Too many wrong OTP attempts"));
                     }
                     let _ = tx.send(ProviderEvent::AuthOtpPrompt(
@@ -157,7 +339,10 @@ impl TelegramProvider {
                     pt = new_token;
                     pw_retries += 1;
                     if pw_retries >= MAX_AUTH_RETRIES {
-                        let _ = tx.send(ProviderEvent::AuthStatusChanged(Platform::Telegram, AuthStatus::Failed));
+                        let _ = tx.send(ProviderEvent::AuthStatusChanged(
+                            Platform::Telegram,
+                            AuthStatus::Failed,
+                        ));
                         return Err(anyhow::anyhow!("Too many wrong 2FA password attempts"));
                     }
                     let _ = tx.send(ProviderEvent::AuthPasswordPrompt(
@@ -168,6 +353,146 @@ impl TelegramProvider {
                 Err(e) => return Err(anyhow::anyhow!("check_password error: {}", e)),
             }
         }
+    }
+
+    /// Background task: connect, authenticate, fetch initial dialogs, then run the update loop.
+    /// Called from within the tokio::spawn in `start()`.
+    async fn connect_and_run(
+        api_id: i32,
+        api_hash: String,
+        session_path: PathBuf,
+        peer_cache: PeerCache,
+        client_slot: Arc<TokioMutex<Option<Client>>>,
+        mut auth_rx: mpsc::UnboundedReceiver<AuthInput>,
+        tx: mpsc::UnboundedSender<ProviderEvent>,
+    ) -> Result<()> {
+        // 1. Load (or create fresh) session.
+        let session = Arc::new(load_session(&session_path));
+
+        // 2. Build the sender pool (network I/O layer).
+        let pool = SenderPool::new(Arc::clone(&session), api_id);
+
+        // 3. Build client from the pool handle (thin wrapper, no network yet).
+        let client = Client::new(pool.handle);
+
+        // 4. Spawn the network runner — this drives all MTProto I/O.
+        //    We hold the runner in a task; `updates_rx` belongs to us.
+        let updates_rx = pool.updates;
+        let runner_handle = tokio::spawn(async move {
+            pool.runner.run().await;
+        });
+
+        // 5. Authenticate if not already logged in.
+        match client.is_authorized().await {
+            Ok(false) => {
+                tracing::info!("Telegram: not authorized, starting auth flow");
+                Self::authenticate(&client, &api_hash, &mut auth_rx, &tx).await?;
+            }
+            Ok(true) => {
+                tracing::info!("Telegram: already authorized (session loaded)");
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Telegram: is_authorized failed: {}", e));
+            }
+        }
+
+        // Store the client so callers (send_message, get_messages, etc.) can use it.
+        *client_slot.lock().await = Some(client.clone());
+
+        // 6. Persist session after successful auth.
+        save_session(&session, &session_path);
+
+        // 7. Notify TUI that we are authenticated.
+        let _ = tx.send(ProviderEvent::AuthStatusChanged(
+            Platform::Telegram,
+            AuthStatus::Authenticated,
+        ));
+
+        // 8. Fetch initial dialog list and send to TUI.
+        let mut dialogs = client.iter_dialogs();
+        let mut chats = Vec::new();
+        let mut count = 0usize;
+
+        while let Some(dialog) = dialogs
+            .next()
+            .await
+            .map_err(|e| anyhow::anyhow!("iter_dialogs error: {}", e))?
+        {
+            if count >= MAX_DIALOGS {
+                break;
+            }
+            count += 1;
+
+            let peer = dialog.peer();
+            let peer_ref = dialog.peer_ref();
+            let peer_id = peer.id();
+
+            let chat_id_str = peer_id
+                .bot_api_dialog_id()
+                .map(peer_id_to_chat_id)
+                .unwrap_or_else(|| "tg-unknown".to_string());
+
+            peer_cache.insert(&chat_id_str, peer_ref);
+
+            let name = peer.name().unwrap_or("Unknown").to_string();
+            let last_message = dialog.last_message.as_ref().map(|m| {
+                if m.text().is_empty() {
+                    "[Media]".to_string()
+                } else {
+                    m.text().to_string()
+                }
+            });
+            let is_group = matches!(peer, Peer::Group(_) | Peer::Channel(_));
+
+            chats.push(UnifiedChat {
+                id: chat_id_str,
+                platform: Platform::Telegram,
+                name,
+                display_name: None,
+                last_message,
+                unread_count: 0,
+                is_group,
+                is_pinned: false,
+                is_newsletter: false,
+                is_muted: false,
+            });
+        }
+
+        let _ = tx.send(ProviderEvent::ChatsUpdated(chats));
+        let _ = tx.send(ProviderEvent::SyncCompleted);
+        save_session(&session, &session_path);
+
+        // 9. Run the update loop — stream incoming updates until the runner exits.
+        let mut update_stream = client
+            .stream_updates(updates_rx, UpdatesConfiguration::default())
+            .await;
+
+        loop {
+            match update_stream.next().await {
+                Ok(update) => {
+                    if let grammers_client::update::Update::NewMessage(msg) = update {
+                        let chat_id = msg
+                            .peer_id()
+                            .bot_api_dialog_id()
+                            .map(peer_id_to_chat_id)
+                            .unwrap_or_else(|| "tg-unknown".to_string());
+
+                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id) {
+                            let _ = tx.send(ProviderEvent::NewMessage(unified));
+                        }
+                    }
+                    // Other update kinds are ignored for now.
+                }
+                Err(e) => {
+                    tracing::warn!("Telegram update stream error: {}; stopping", e);
+                    break;
+                }
+            }
+        }
+
+        // 10. Clean up runner.
+        runner_handle.abort();
+        Ok(())
     }
 }
 
@@ -180,138 +505,52 @@ impl MessagingProvider for TelegramProvider {
             AuthStatus::Authenticating,
         ));
 
-        // Open (or create) the SQLite session file.
-        let session = SqliteSession::open(&self.session_path)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to open Telegram session: {}", e))?;
-        let session = Arc::new(session);
-
-        // Build the sender pool.
-        let pool = SenderPool::new(Arc::clone(&session), self.api_id);
-
-        // Construct the client from the fat handle.
-        let client = Client::new(pool.handle);
-
-        // Spawn the network runner as a background task.
-        let runner_handle = tokio::spawn(pool.runner.run());
-
-        // Authenticate if needed.
-        if !client
-            .is_authorized()
-            .await
-            .map_err(|e| anyhow::anyhow!("is_authorized failed: {}", e))?
-        {
-            let mut auth_rx = self
-                .auth_rx
-                .take()
-                .ok_or_else(|| anyhow::anyhow!("auth_rx already consumed"))?;
-
-            Self::authenticate(&client, &self.api_hash, &mut auth_rx, &tx).await?;
-
-            // Put the receiver back so a future reconnect can reuse it.
-            self.auth_rx = Some(auth_rx);
-        }
-
-        self.auth_status = AuthStatus::Authenticated;
-        let _ = tx.send(ProviderEvent::AuthStatusChanged(
-            Platform::Telegram,
-            AuthStatus::Authenticated,
-        ));
-
-        // Spawn the update-reading loop.
-        let update_client = client.clone();
+        let api_id = self.api_id;
+        let api_hash = self.api_hash.clone();
+        let session_path = self.session_path.clone();
         let peer_cache = self.peer_cache.clone();
-        let update_tx = tx.clone();
-        let updates_rx = pool.updates;
-        let update_handle = tokio::spawn(async move {
-            let mut stream = update_client
-                .stream_updates(updates_rx, UpdatesConfiguration::default())
-                .await;
-            let mut consecutive_errors = 0u8;
-            let mut backoff_secs = 1u64;
-            loop {
-                match stream.next().await {
-                    Ok(update) => {
-                        consecutive_errors = 0;
-                        backoff_secs = 1;
-                        match update {
-                            Update::NewMessage(msg) if !msg.outgoing() => {
-                                let peer_id = msg.peer_id();
-                                let chat_id_str = peer_id
-                                    .bot_api_dialog_id()
-                                    .map(peer_id_to_chat_id)
-                                    .unwrap_or_else(|| "tg-unknown".to_string());
+        let client_slot = Arc::clone(&self.client);
+        let auth_rx = self
+            .auth_rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("auth_rx already consumed"))?;
 
-                                // Cache peer ref if available (async lookup from session).
-                                if let Some(peer_ref) = msg.peer_ref().await {
-                                    peer_cache.insert(&chat_id_str, peer_ref);
-                                }
-
-                                if let Some(unified) = grammers_message_to_unified(&msg, &chat_id_str)
-                                {
-                                    let _ = update_tx.send(ProviderEvent::NewMessage(unified));
-                                }
-                            }
-                            Update::MessageEdited(msg) => {
-                                // Re-emit edited messages as new (v1 simplification)
-                                let peer_id = msg.peer_id();
-                                let chat_id_str = peer_id
-                                    .bot_api_dialog_id()
-                                    .map(peer_id_to_chat_id)
-                                    .unwrap_or_else(|| "tg-unknown".to_string());
-                                // Cache peer_ref like NewMessage does
-                                if let Some(peer_ref) = msg.peer_ref().await {
-                                    peer_cache.insert(&chat_id_str, peer_ref);
-                                }
-                                if let Some(unified) = grammers_message_to_unified(&msg, &chat_id_str) {
-                                    let _ = update_tx.send(ProviderEvent::NewMessage(unified));
-                                }
-                            }
-                            _ => {
-                                tracing::trace!("Unhandled Telegram update");
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Telegram update stream error: {}", e);
-                        consecutive_errors += 1;
-                        if consecutive_errors >= 3 {
-                            let _ = update_tx.send(ProviderEvent::AuthStatusChanged(Platform::Telegram, AuthStatus::Failed));
-                            tracing::error!("Telegram: 3 consecutive update errors, stopping");
-                            break;
-                        }
-                        tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
-                        backoff_secs = (backoff_secs * 2).min(30);
-                    }
-                }
+        // Spawn the entire connect+auth+update loop as a background task so that
+        // start() returns immediately and the TUI can draw before auth is needed.
+        let connect_handle = tokio::spawn(async move {
+            if let Err(e) = Self::connect_and_run(
+                api_id, api_hash, session_path, peer_cache, client_slot, auth_rx, tx.clone(),
+            )
+            .await
+            {
+                tracing::error!("Telegram background task failed: {}", e);
+                let _ = tx.send(ProviderEvent::AuthStatusChanged(
+                    Platform::Telegram,
+                    AuthStatus::Failed,
+                ));
             }
         });
 
-        self.client = Some(client);
-        self.runner_handle = Some(runner_handle);
-        self.update_handle = Some(update_handle);
-
+        self.runner_handle = Some(connect_handle);
         Ok(())
     }
 
     async fn stop(&mut self) -> Result<()> {
-        if let Some(h) = self.update_handle.take() {
-            h.abort();
-        }
         if let Some(h) = self.runner_handle.take() {
             h.abort();
         }
-        if let Some(client) = &self.client {
+        // Disconnect the client if it was set.
+        if let Some(client) = self.client.lock().await.as_ref() {
             client.disconnect();
         }
-        self.client = None;
+        *self.client.lock().await = None;
         self.auth_status = AuthStatus::NotAuthenticated;
         Ok(())
     }
 
     async fn send_message(&self, chat_id: &str, content: MessageContent) -> Result<UnifiedMessage> {
-        let client = self
-            .client
+        let guard = self.client.lock().await;
+        let client = guard
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
@@ -343,9 +582,8 @@ impl MessagingProvider for TelegramProvider {
     }
 
     async fn get_chats(&self) -> Result<Vec<UnifiedChat>> {
-        let client = self
-            .client
-            .as_ref()
+        let client = self.client.lock().await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
         let mut dialogs = client.iter_dialogs();
@@ -402,9 +640,8 @@ impl MessagingProvider for TelegramProvider {
     }
 
     async fn get_messages(&self, chat_id: &str) -> Result<Vec<UnifiedMessage>> {
-        let client = self
-            .client
-            .as_ref()
+        let client = self.client.lock().await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
         let peer = self
@@ -431,9 +668,8 @@ impl MessagingProvider for TelegramProvider {
     }
 
     async fn mark_as_read(&self, chat_id: &str, _msg_ids: Vec<String>) -> Result<()> {
-        let client = self
-            .client
-            .as_ref()
+        let client = self.client.lock().await
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
         let peer = self
