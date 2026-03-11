@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, Local, NaiveTime, TimeZone, Timelike, Utc, Weekday};
+use chrono::{DateTime, Datelike, Local, NaiveTime, TimeZone, Utc, Weekday};
 
 /// Parse a natural language time string into a UTC DateTime.
 /// Returns None if the input cannot be parsed.
@@ -37,7 +37,7 @@ pub fn parse_schedule_time(input: &str) -> Option<DateTime<Utc>> {
         // Two tokens: "tomorrow 9am", "monday 3pm", "2026-03-15 09:00"
         2 => {
             // Try ISO-ish: "2026-03-15 09:00"
-            if let Some(dt) = try_parse_iso(&parts[0], &parts[1]) {
+            if let Some(dt) = try_parse_iso(parts[0], parts[1]) {
                 return Some(dt);
             }
             // Try "tomorrow <time>"
@@ -178,6 +178,7 @@ pub fn format_local_time(dt: &DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Timelike;
 
     #[test]
     fn parse_time_12h() {
