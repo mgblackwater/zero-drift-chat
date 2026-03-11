@@ -32,7 +32,7 @@ pub fn render_status_bar(
         InputMode::ChatMenu => "j/k:Navigate | p/Enter:Confirm | Esc:Close",
         InputMode::Searching => "Type to filter | j/k:Navigate | Enter:Open+Insert | Esc:Cancel",
         InputMode::MessageSelect => "j/k:Navigate | y/Enter:Copy | Esc:Cancel",
-        InputMode::SchedulePrompt => "Type delay (e.g. '5m', '2h', 'tomorrow 9am') | Enter:Confirm | Esc:Cancel",
+        InputMode::SchedulePrompt => "Type time (e.g. 'tomorrow 9am', 'fri 3pm', 'Mar 15 14:30') | Enter:Confirm | Esc:Cancel",
         InputMode::ScheduleList => "j/k:Navigate | d:Cancel | Esc/q:Close",
     };
 
