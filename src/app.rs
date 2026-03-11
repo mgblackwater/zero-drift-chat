@@ -291,6 +291,9 @@ impl App {
     }
 
     fn handle_tick(&mut self) {
+        // Clear transient copy status after one tick so it disappears quickly
+        self.state.copy_status = None;
+
         let events = self.router.poll_events();
 
         // Cap events per tick to avoid blocking the render loop
@@ -790,6 +793,35 @@ impl App {
                     }
                 }
             }
+            Action::CopyLastMessage => {
+                if let Some(msg) = self.state.messages.last() {
+                    let text = msg.content.as_text().to_string();
+                    copy_to_clipboard(&text);
+                    self.state.copy_status = Some("Copied!".to_string());
+                }
+            }
+            Action::EnterMessageSelect => {
+                self.state.enter_message_select();
+            }
+            Action::MessageSelectPrev => {
+                self.state.message_select_prev();
+            }
+            Action::MessageSelectNext => {
+                self.state.message_select_next();
+            }
+            Action::MessageSelectCopy => {
+                if let Some(idx) = self.state.selected_message_idx {
+                    if let Some(msg) = self.state.messages.get(idx) {
+                        let text = msg.content.as_text().to_string();
+                        copy_to_clipboard(&text);
+                        self.state.copy_status = Some("Copied!".to_string());
+                    }
+                }
+                self.state.exit_message_select();
+            }
+            Action::MessageSelectExit => {
+                self.state.exit_message_select();
+            }
             Action::None => {}
         }
     }
@@ -895,4 +927,40 @@ impl App {
         }
         None
     }
+}
+
+/// Copy text to the system clipboard using the OSC 52 terminal escape sequence.
+/// This works in most modern terminals (kitty, iTerm2, WezTerm, tmux with set-clipboard on, etc.).
+fn copy_to_clipboard(text: &str) {
+    use std::io::Write;
+    let encoded = base64_encode(text.as_bytes());
+    // OSC 52 ; c ; <base64> ST
+    let osc52 = format!("\x1b]52;c;{}\x07", encoded);
+    let _ = std::io::stdout().write_all(osc52.as_bytes());
+    let _ = std::io::stdout().flush();
+}
+
+/// Minimal base64 encoder (no external crate needed).
+fn base64_encode(input: &[u8]) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(ALPHABET[((n >> 18) & 0x3f) as usize] as char);
+        out.push(ALPHABET[((n >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(ALPHABET[((n >> 6) & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(ALPHABET[(n & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }

@@ -61,7 +61,10 @@ On first launch with WhatsApp enabled, a QR code appears. Scan it with WhatsApp 
 | `i` / `Enter` | Start typing |
 | `r` | Rename selected chat |
 | `s` | Open settings |
+| `/` | Open chat search |
 | `PgUp` / `PgDn` | Scroll messages |
+| `y` | Copy last message to clipboard |
+| `v` | Enter Message Select mode |
 | `q` | Quit |
 
 **Insert mode:**
@@ -73,6 +76,24 @@ On first launch with WhatsApp enabled, a QR code appears. Scan it with WhatsApp 
 | `← →` / `Home` / `End` | Move cursor |
 | `Ctrl+U` | Clear input |
 | `Esc` | Back to normal mode |
+
+**Message Select mode** (`v` from Normal mode):
+
+Navigate the message list and copy any message to your clipboard.
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Select next message (newer) |
+| `k` / `↑` | Select previous message (older) |
+| `y` / `Enter` | Copy selected message and exit |
+| `Esc` / `q` | Cancel without copying |
+
+The selected message is highlighted with a cyan `▌` gutter and blue background.
+Copying uses the **OSC 52** terminal escape sequence so no external tool is needed.
+A brief **"Copied!"** confirmation flashes in the status bar.
+
+> **Terminal support:** OSC 52 works out of the box in kitty, iTerm2, and WezTerm.
+> In tmux, enable it with `set -g set-clipboard on` in your `~/.tmux.conf`.
 
 **Settings overlay:**
 

@@ -16,12 +16,13 @@ pub fn render_input_bar(
     ai_suggestion: Option<&str>,
 ) {
     let (mode_tag, border_color, title_align) = match mode {
-        InputMode::Normal   => ("NORMAL",   Color::DarkGray, Alignment::Left),
-        InputMode::Editing  => ("✏  INSERT", Color::Yellow,   Alignment::Center),
-        InputMode::Settings => ("SETTINGS", Color::Cyan,     Alignment::Left),
-        InputMode::Renaming => ("RENAME",   Color::Magenta,  Alignment::Left),
-        InputMode::ChatMenu => ("MENU",     Color::Yellow,   Alignment::Left),
-        InputMode::Searching => ("SEARCH",  Color::Cyan,     Alignment::Left),
+        InputMode::Normal => ("NORMAL", Color::DarkGray, Alignment::Left),
+        InputMode::Editing => ("✏  INSERT", Color::Yellow, Alignment::Center),
+        InputMode::Settings => ("SETTINGS", Color::Cyan, Alignment::Left),
+        InputMode::Renaming => ("RENAME", Color::Magenta, Alignment::Left),
+        InputMode::ChatMenu => ("MENU", Color::Yellow, Alignment::Left),
+        InputMode::Searching => ("SEARCH", Color::Cyan, Alignment::Left),
+        InputMode::MessageSelect => ("SELECT", Color::Blue, Alignment::Left),
     };
 
     let block = Block::default()
@@ -49,8 +50,7 @@ pub fn render_input_bar(
                     };
                     let hint_text = format!("  ↳ {}", suggestion);
                     f.render_widget(
-                        Paragraph::new(hint_text)
-                            .style(Style::default().fg(Color::DarkGray)),
+                        Paragraph::new(hint_text).style(Style::default().fg(Color::DarkGray)),
                         hint_area,
                     );
                 }
