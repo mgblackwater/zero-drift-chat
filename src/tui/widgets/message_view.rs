@@ -135,8 +135,8 @@ pub fn render_message_view(
             Style::default()
         };
 
-        // Left gutter marker: "▌ " for selected, "  " otherwise (keeps alignment)
-        let gutter = if is_selected { "▌ " } else { "  " };
+        // Left gutter marker: only shown when this message is selected
+        let gutter = "▌ ";
         let gutter_style = Style::default().fg(Color::Cyan).bg(Color::Blue);
 
         let header = if msg.is_outgoing {
@@ -156,12 +156,21 @@ pub fn render_message_view(
                 .alignment(Alignment::Right);
             }
             line
-        } else {
-            // Left-aligned: gutter + "Sender HH:MM"
+        } else if is_selected {
+            // Left-aligned selected: cyan gutter + highlighted sender + time
             Line::from(vec![
                 Span::styled(gutter, gutter_style),
                 Span::styled(format!("{} ", msg.sender), select_bg.fg(sender_color)),
                 Span::styled(time, select_bg.fg(Color::DarkGray)),
+            ])
+        } else {
+            // Left-aligned normal: no gutter
+            Line::from(vec![
+                Span::styled(
+                    format!("{} ", msg.sender),
+                    Style::default().fg(sender_color),
+                ),
+                Span::styled(time, Style::default().fg(Color::DarkGray)),
             ])
         };
 
