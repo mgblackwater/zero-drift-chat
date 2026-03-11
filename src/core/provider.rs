@@ -16,6 +16,10 @@ pub enum ProviderEvent {
     AuthQrCode(String),
     SyncCompleted,
     SelfRead { chat_id: String },
+    // Telegram interactive auth — Option<String> carries retry error hint
+    AuthPhonePrompt(Platform, Option<String>),
+    AuthOtpPrompt(Platform, Option<String>),
+    AuthPasswordPrompt(Platform, Option<String>),
 }
 
 #[async_trait]

@@ -277,6 +277,9 @@ impl App {
                     self.state.push_ai_log(format!("[error] ← {}", e));
                     self.state.ai_status = Some(format!("AI: {}", e));
                 }
+                Some(AppEvent::AuthInput(_, _)) => {
+                    // TODO(Task 11): forward auth input to appropriate provider's auth_tx
+                }
                 Some(AppEvent::Quit) | None => {
                     break;
                 }
@@ -511,6 +514,11 @@ impl App {
                     tracing::info!("Sync completed, refreshing current chat");
                     self.load_selected_chat_messages();
                     self.refresh_title();
+                }
+                ProviderEvent::AuthPhonePrompt(_, _)
+                | ProviderEvent::AuthOtpPrompt(_, _)
+                | ProviderEvent::AuthPasswordPrompt(_, _) => {
+                    // TODO(Task 11): route to TUI auth input flow
                 }
             }
         }
