@@ -63,11 +63,20 @@ pub fn parse_schedule_time(input: &str) -> Option<DateTime<Utc>> {
             let month = parse_month(parts[0])?;
             let day: u32 = parts[1].trim_end_matches(',').parse().ok()?;
             let time = parse_time(parts[2])?;
-            let year = Local::now().year();
+            let now = Local::now();
+            let year = now.year();
             let date = chrono::NaiveDate::from_ymd_opt(year, month, day)?;
             let dt = date.and_time(time);
             let local_dt = Local.from_local_datetime(&dt).single()?;
-            Some(local_dt.with_timezone(&Utc))
+            // If the date is in the past, advance to next year
+            if local_dt <= now {
+                let date = chrono::NaiveDate::from_ymd_opt(year + 1, month, day)?;
+                let dt = date.and_time(time);
+                let local_dt = Local.from_local_datetime(&dt).single()?;
+                Some(local_dt.with_timezone(&Utc))
+            } else {
+                Some(local_dt.with_timezone(&Utc))
+            }
         }
         _ => None,
     }
@@ -152,7 +161,12 @@ fn try_parse_iso(date_str: &str, time_str: &str) -> Option<DateTime<Utc>> {
     let time = parse_time(time_str)?;
     let dt = date.and_time(time);
     let local_dt = Local.from_local_datetime(&dt).single()?;
-    Some(local_dt.with_timezone(&Utc))
+    let utc_dt = local_dt.with_timezone(&Utc);
+    // Reject past dates — scheduling in the past makes no sense
+    if utc_dt <= Utc::now() {
+        return None;
+    }
+    Some(utc_dt)
 }
 
 /// Format a UTC DateTime for display in local time.
@@ -229,11 +243,49 @@ mod tests {
     }
 
     #[test]
+    fn parse_schedule_iso_past_returns_none() {
+        // A date in the past should return None
+        assert!(parse_schedule_time("2020-01-01 09:00").is_none());
+    }
+
+    #[test]
+    fn parse_schedule_month_day_past_rolls_to_next_year() {
+        // "jan 1 9am" on March 11 2026 should schedule for Jan 1 2027
+        let result = parse_schedule_time("jan 1 9am").unwrap();
+        // The result should be in the future
+        assert!(result > Utc::now());
+    }
+
+    #[test]
     fn parse_schedule_month_day_time() {
         let result = parse_schedule_time("mar 15 9am").unwrap();
         let local = result.with_timezone(&Local);
         assert_eq!(local.month(), 3);
         assert_eq!(local.day(), 15);
+    }
+
+    #[test]
+    fn parse_schedule_weekday() {
+        // Pick a weekday that is NOT today so the result is deterministic
+        let today = Local::now().date_naive();
+        let target_weekday = today.weekday().succ();
+        let day_name = match target_weekday {
+            Weekday::Mon => "monday",
+            Weekday::Tue => "tuesday",
+            Weekday::Wed => "wednesday",
+            Weekday::Thu => "thursday",
+            Weekday::Fri => "friday",
+            Weekday::Sat => "saturday",
+            Weekday::Sun => "sunday",
+        };
+        let input = format!("{} 3pm", day_name);
+        let result = parse_schedule_time(&input).unwrap();
+        let local = result.with_timezone(&Local);
+        assert_eq!(local.hour(), 15);
+        assert_eq!(local.minute(), 0);
+        // Should be within the next 7 days
+        let days_diff = (local.date_naive() - today).num_days();
+        assert!(days_diff >= 1 && days_diff <= 7);
     }
 
     #[test]
