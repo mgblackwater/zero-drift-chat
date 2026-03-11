@@ -4,8 +4,6 @@ use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-use crate::core::types::Platform;
-
 #[derive(Debug)]
 pub enum AppEvent {
     Key(crossterm::event::KeyEvent),
@@ -16,7 +14,6 @@ pub enum AppEvent {
     Quit,
     AiSuggestion(String),
     AiError(String),
-    AuthInput(Platform, String),
 }
 
 pub struct EventHandler {

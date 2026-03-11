@@ -304,22 +304,6 @@ impl App {
                     self.state.push_ai_log(format!("[error] ← {}", e));
                     self.state.ai_status = Some(format!("AI: {}", e));
                 }
-                Some(AppEvent::AuthInput(platform, value)) => {
-                    if platform == Platform::Telegram {
-                        if let (Some(ref tx), Some(ref auth)) =
-                            (&self.telegram_auth_tx, &self.state.telegram_auth_state)
-                        {
-                            use crate::providers::telegram::AuthInput;
-                            use crate::tui::app_state::TelegramAuthStage;
-                            let auth_input = match auth.stage {
-                                TelegramAuthStage::Phone => AuthInput::Phone(value),
-                                TelegramAuthStage::Otp => AuthInput::Otp(value),
-                                TelegramAuthStage::Password => AuthInput::Password(value),
-                            };
-                            let _ = tx.send(auth_input);
-                        }
-                    }
-                }
                 Some(AppEvent::Quit) | None => {
                     break;
                 }
@@ -1041,7 +1025,7 @@ impl App {
             }
             Action::TelegramAuthSubmit => {
                 let value = self.state.take_telegram_auth_input();
-                if !value.is_empty() {
+                if !value.trim().is_empty() {
                     if let (Some(ref tx), Some(ref auth)) =
                         (&self.telegram_auth_tx, &self.state.telegram_auth_state)
                     {
@@ -1052,7 +1036,9 @@ impl App {
                             TelegramAuthStage::Otp => AuthInput::Otp(value),
                             TelegramAuthStage::Password => AuthInput::Password(value),
                         };
-                        let _ = tx.send(auth_input);
+                        if tx.send(auth_input).is_err() {
+                            tracing::warn!("Telegram auth_tx send failed — receiver may have dropped");
+                        }
                     }
                     // Close overlay; it will re-open if auth needs another step
                     self.state.close_telegram_auth();
