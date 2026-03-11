@@ -28,3 +28,5 @@ qrcode = "0.14"
 tui-textarea = { version = "0.7", features = ["crossterm"] }
 reqwest = { version = "0.12", features = ["json"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+grammers-client = { git = "https://codeberg.org/Lonami/grammers", package = "grammers-client" }
+grammers-session = { git = "https://codeberg.org/Lonami/grammers", package = "grammers-session" }
