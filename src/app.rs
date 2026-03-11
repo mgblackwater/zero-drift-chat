@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::{
     execute,
-    event::{DisableBracketedPaste, EnableBracketedPaste},
+    event::{DisableBracketedPaste, EnableBracketedPaste, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -856,7 +856,6 @@ impl App {
                 }
             }
             Action::ScheduleInput(key) => {
-                use crossterm::event::KeyCode;
                 if let Some(ref mut sp) = self.state.schedule_prompt_state {
                     match key.code {
                         KeyCode::Backspace => { sp.query.pop(); }
@@ -881,10 +880,12 @@ impl App {
                             tracing::error!("Failed to schedule message: {}", e);
                         } else {
                             self.state.schedule_status = Some(format!("Scheduled for {}", format_local_time(&send_at)));
+                            self.schedule_status_ticks = 0;
                             tracing::info!("Scheduled message for {}", format_local_time(&send_at));
                         }
                     } else {
                         self.state.schedule_status = Some("Could not parse time — try 'tomorrow 9am' or 'Mar 15 14:30'".to_string());
+                        self.schedule_status_ticks = 0;
                     }
                     self.state.input_mode = InputMode::Editing;
                 }
@@ -923,12 +924,19 @@ impl App {
             Action::ScheduleListDelete => {
                 if let Some(ref mut sl) = self.state.schedule_list_state {
                     if let Some(msg) = sl.messages.get(sl.selected) {
-                        let _ = self.db.update_scheduled_status(&msg.id, "cancelled");
-                        sl.messages.remove(sl.selected);
-                        if sl.selected > 0 && sl.selected >= sl.messages.len() {
-                            sl.selected = sl.messages.len().saturating_sub(1);
+                        match self.db.update_scheduled_status(&msg.id, "cancelled") {
+                            Ok(_) => {
+                                sl.messages.remove(sl.selected);
+                                if sl.selected > 0 && sl.selected >= sl.messages.len() {
+                                    sl.selected = sl.messages.len().saturating_sub(1);
+                                }
+                                self.state.schedule_status = Some("Schedule cancelled".to_string());
+                                self.schedule_status_ticks = 0;
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to cancel scheduled message: {}", e);
+                            }
                         }
-                        self.state.schedule_status = Some("Schedule cancelled".to_string());
                     }
                     if sl.messages.is_empty() {
                         self.state.schedule_list_state = None;
@@ -977,6 +985,7 @@ impl App {
                 sent_count,
                 if sent_count == 1 { "" } else { "s" }
             ));
+            self.schedule_status_ticks = 0;
         }
     }
 
