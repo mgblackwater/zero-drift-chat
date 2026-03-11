@@ -66,6 +66,7 @@ pub fn map_key(key: KeyEvent, mode: InputMode, enter_sends: bool) -> Action {
         InputMode::MessageSelect => map_message_select_mode(key),
         InputMode::SchedulePrompt => map_schedule_prompt_mode(key),
         InputMode::ScheduleList => map_schedule_list_mode(key),
+        InputMode::TelegramAuth => Action::None,
     }
 }
 
