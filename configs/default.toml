@@ -16,6 +16,12 @@ message_interval_secs = 3
 enabled = true
 # phone_number = "+1234567890"
 
+[telegram]
+enabled = false
+# api_id and api_hash obtained from https://my.telegram.org (API development tools)
+# api_id = 12345678
+# api_hash = ""
+
 [ai]
 enabled = true
 provider = "ollama"
