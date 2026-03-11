@@ -14,6 +14,8 @@ pub struct AppConfig {
     #[serde(default)]
     pub whatsapp: WhatsAppConfig,
     #[serde(default)]
+    pub telegram: TelegramConfig,
+    #[serde(default)]
     pub ai: AiConfig,
 }
 
@@ -58,6 +60,26 @@ impl Default for WhatsAppConfig {
         Self {
             enabled: true,
             phone_number: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TelegramConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub api_id: i32,
+    #[serde(default)]
+    pub api_hash: String,
+}
+
+impl Default for TelegramConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            api_id: 0,
+            api_hash: String::new(),
         }
     }
 }
@@ -160,6 +182,7 @@ impl Default for AppConfig {
             tui: TuiConfig::default(),
             mock_provider: MockProviderConfig::default(),
             whatsapp: WhatsAppConfig::default(),
+            telegram: TelegramConfig::default(),
             ai: AiConfig::default(),
         }
     }
@@ -224,6 +247,30 @@ impl AppConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_telegram_config() {
+        let toml = r#"
+[telegram]
+enabled = true
+api_id = 123456
+api_hash = "abc123def456"
+"#;
+        let result = toml::from_str::<AppConfig>(toml);
+        assert!(result.is_ok(), "parse failed: {:?}", result.err());
+        let cfg = result.unwrap();
+        assert!(cfg.telegram.enabled);
+        assert_eq!(cfg.telegram.api_id, 123456);
+        assert_eq!(cfg.telegram.api_hash, "abc123def456");
+    }
+
+    #[test]
+    fn test_telegram_config_defaults() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.telegram.enabled, "telegram disabled by default");
+        assert_eq!(cfg.telegram.api_id, 0);
+        assert!(cfg.telegram.api_hash.is_empty());
+    }
 
     #[test]
     fn test_parse_ai_config() {
