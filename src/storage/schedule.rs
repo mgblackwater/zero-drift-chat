@@ -3,6 +3,7 @@ use crate::core::Result;
 use crate::storage::db::Database;
 use chrono::{DateTime, Utc};
 
+#[derive(Debug, Clone)]
 pub struct ScheduledMessage {
     pub id: String,
     pub chat_id: String,
@@ -13,7 +14,7 @@ pub struct ScheduledMessage {
     pub created_at: DateTime<Utc>,
 }
 
-struct ScheduledRow {
+struct ScheduledMessageRow {
     id: String,
     chat_id: String,
     platform_str: String,
@@ -32,7 +33,7 @@ fn parse_platform(s: &str) -> Platform {
     }
 }
 
-fn parse_scheduled_row(row: ScheduledRow) -> ScheduledMessage {
+fn parse_scheduled_row(row: ScheduledMessageRow) -> ScheduledMessage {
     let platform = parse_platform(&row.platform_str);
     let content: MessageContent =
         serde_json::from_str(&row.content_json).unwrap_or(MessageContent::Text(row.content_json));
@@ -88,7 +89,7 @@ impl Database {
 
         let rows = stmt
             .query_map(rusqlite::params![now], |row| {
-                Ok(ScheduledRow {
+                Ok(ScheduledMessageRow {
                     id: row.get(0)?,
                     chat_id: row.get(1)?,
                     platform_str: row.get(2)?,
@@ -113,7 +114,7 @@ impl Database {
 
         let rows = stmt
             .query_map([], |row| {
-                Ok(ScheduledRow {
+                Ok(ScheduledMessageRow {
                     id: row.get(0)?,
                     chat_id: row.get(1)?,
                     platform_str: row.get(2)?,
