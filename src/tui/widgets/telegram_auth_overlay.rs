@@ -11,7 +11,11 @@ use crate::tui::app_state::{TelegramAuthStage, TelegramAuthState};
 pub fn render_telegram_auth_overlay(f: &mut Frame, state: &TelegramAuthState) {
     let area = f.area();
 
-    let popup_width = 60u16.min(area.width);
+    if area.width < 20 || area.height < 6 {
+        return;
+    }
+
+    let popup_width = 70u16.min(area.width);
     let popup_height = 10u16.min(area.height);
     let x = area.x + (area.width.saturating_sub(popup_width)) / 2;
     let y = area.y + (area.height.saturating_sub(popup_height)) / 2;
