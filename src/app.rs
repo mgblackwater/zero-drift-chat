@@ -20,10 +20,11 @@ use crate::core::types::{AuthStatus, MessageContent, Platform};
 use crate::core::MessageRouter;
 use crate::providers::mock::MockProvider;
 use crate::providers::whatsapp::WhatsAppProvider;
-use crate::storage::{AddressBook, Database};
+use crate::storage::{AddressBook, Database, ScheduledMessage};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SearchState, SettingsKey, SettingsValue};
+use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SchedulePromptState, ScheduleListState, SearchState, SettingsKey, SettingsValue};
+use crate::tui::time_parse::{parse_schedule_time, format_local_time};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
@@ -41,6 +42,7 @@ pub struct App {
     last_keystroke: Option<Instant>,
     db_summary_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
     db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
+    schedule_status_ticks: u8,
 }
 
 impl App {
@@ -88,6 +90,7 @@ impl App {
             last_keystroke: None,
             db_summary_tx,
             db_summary_rx,
+            schedule_status_ticks: 0,
         }
     }
 
@@ -166,6 +169,9 @@ impl App {
         // Load messages for the initially selected chat
         self.load_selected_chat_messages();
 
+        // Send any overdue scheduled messages
+        self.check_scheduled_messages().await;
+
         // Set initial terminal title
         self.refresh_title();
 
@@ -237,6 +243,7 @@ impl App {
                             }
                         }
                     }
+                    self.check_scheduled_messages().await;
                 }
                 Some(AppEvent::Key(key)) => {
                     let action = map_key(key, self.state.input_mode, self.state.enter_sends);
@@ -293,6 +300,16 @@ impl App {
     fn handle_tick(&mut self) {
         // Clear transient copy status after one tick so it disappears quickly
         self.state.copy_status = None;
+
+        if self.state.schedule_status.is_some() {
+            self.schedule_status_ticks += 1;
+            if self.schedule_status_ticks >= 8 {
+                self.state.schedule_status = None;
+                self.schedule_status_ticks = 0;
+            }
+        } else {
+            self.schedule_status_ticks = 0;
+        }
 
         let events = self.router.poll_events();
 
@@ -822,17 +839,144 @@ impl App {
             Action::MessageSelectExit => {
                 self.state.exit_message_select();
             }
-            // Schedule actions — handled in Task 4
-            Action::ScheduleMessage
-            | Action::ScheduleInput(_)
-            | Action::ScheduleConfirm
-            | Action::ScheduleCancel
-            | Action::OpenScheduleList
-            | Action::ScheduleListNext
-            | Action::ScheduleListPrev
-            | Action::ScheduleListDelete
-            | Action::ScheduleListClose => {}
+            // Schedule actions
+            Action::ScheduleMessage => {
+                let input = self.state.take_input();
+                if !input.is_empty() {
+                    if let Some(chat_id) = self.state.selected_chat_id().map(|s| s.to_string()) {
+                        let platform = self.state.chats.iter()
+                            .find(|c| c.id == chat_id)
+                            .map(|c| c.platform)
+                            .unwrap_or(Platform::Mock);
+                        self.state.schedule_prompt_state = Some(SchedulePromptState::new(
+                            input, chat_id, platform,
+                        ));
+                        self.state.input_mode = InputMode::SchedulePrompt;
+                    }
+                }
+            }
+            Action::ScheduleInput(key) => {
+                use crossterm::event::KeyCode;
+                if let Some(ref mut sp) = self.state.schedule_prompt_state {
+                    match key.code {
+                        KeyCode::Backspace => { sp.query.pop(); }
+                        KeyCode::Char(c) => { sp.query.push(c); }
+                        _ => {}
+                    }
+                }
+            }
+            Action::ScheduleConfirm => {
+                if let Some(sp) = self.state.schedule_prompt_state.take() {
+                    if let Some(send_at) = parse_schedule_time(&sp.query) {
+                        let msg = ScheduledMessage {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            chat_id: sp.chat_id,
+                            platform: sp.platform,
+                            content: MessageContent::Text(sp.message_text),
+                            send_at,
+                            status: "pending".to_string(),
+                            created_at: chrono::Utc::now(),
+                        };
+                        if let Err(e) = self.db.insert_scheduled_message(&msg) {
+                            tracing::error!("Failed to schedule message: {}", e);
+                        } else {
+                            self.state.schedule_status = Some(format!("Scheduled for {}", format_local_time(&send_at)));
+                            tracing::info!("Scheduled message for {}", format_local_time(&send_at));
+                        }
+                    } else {
+                        self.state.schedule_status = Some("Could not parse time — try 'tomorrow 9am' or 'Mar 15 14:30'".to_string());
+                    }
+                    self.state.input_mode = InputMode::Editing;
+                }
+            }
+            Action::ScheduleCancel => {
+                if let Some(sp) = self.state.schedule_prompt_state.take() {
+                    // Put the message text back into the input
+                    self.state.input = TextArea::default();
+                    for ch in sp.message_text.chars() {
+                        self.state.input.insert_char(ch);
+                    }
+                }
+                self.state.input_mode = InputMode::Editing;
+            }
+            Action::OpenScheduleList => {
+                match self.db.get_pending_scheduled_messages() {
+                    Ok(messages) => {
+                        self.state.schedule_list_state = Some(ScheduleListState::new(messages));
+                        self.state.input_mode = InputMode::ScheduleList;
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to load scheduled messages: {}", e);
+                    }
+                }
+            }
+            Action::ScheduleListNext => {
+                if let Some(ref mut sl) = self.state.schedule_list_state {
+                    sl.select_next();
+                }
+            }
+            Action::ScheduleListPrev => {
+                if let Some(ref mut sl) = self.state.schedule_list_state {
+                    sl.select_prev();
+                }
+            }
+            Action::ScheduleListDelete => {
+                if let Some(ref mut sl) = self.state.schedule_list_state {
+                    if let Some(msg) = sl.messages.get(sl.selected) {
+                        let _ = self.db.update_scheduled_status(&msg.id, "cancelled");
+                        sl.messages.remove(sl.selected);
+                        if sl.selected > 0 && sl.selected >= sl.messages.len() {
+                            sl.selected = sl.messages.len().saturating_sub(1);
+                        }
+                        self.state.schedule_status = Some("Schedule cancelled".to_string());
+                    }
+                    if sl.messages.is_empty() {
+                        self.state.schedule_list_state = None;
+                        self.state.input_mode = InputMode::Normal;
+                    }
+                }
+            }
+            Action::ScheduleListClose => {
+                self.state.schedule_list_state = None;
+                self.state.input_mode = InputMode::Normal;
+            }
             Action::None => {}
+        }
+    }
+
+    async fn check_scheduled_messages(&mut self) {
+        let due = match self.db.get_due_scheduled_messages() {
+            Ok(msgs) => msgs,
+            Err(e) => {
+                tracing::error!("Failed to query scheduled messages: {}", e);
+                return;
+            }
+        };
+
+        let mut sent_count = 0;
+        for msg in due {
+            let chat_id = msg.chat_id.clone();
+            let content = msg.content.clone();
+            if let Some(provider) = self.router.get_provider_mut(msg.platform) {
+                match provider.send_message(&chat_id, content).await {
+                    Ok(_) => {
+                        let _ = self.db.update_scheduled_status(&msg.id, "sent");
+                        sent_count += 1;
+                        tracing::info!("Sent scheduled message {} to {}", msg.id, chat_id);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to send scheduled message {}: {}", msg.id, e);
+                        // Leave as pending — will retry next tick
+                    }
+                }
+            }
+        }
+        if sent_count > 0 {
+            self.state.schedule_status = Some(format!(
+                "Sent {} scheduled message{}",
+                sent_count,
+                if sent_count == 1 { "" } else { "s" }
+            ));
         }
     }
 
