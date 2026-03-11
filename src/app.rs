@@ -956,6 +956,12 @@ impl App {
                 self.state.schedule_list_state = None;
                 self.state.input_mode = InputMode::Normal;
             }
+            Action::TelegramAuthChar(_)
+            | Action::TelegramAuthBackspace
+            | Action::TelegramAuthSubmit
+            | Action::TelegramAuthCancel => {
+                // Handled by TelegramAuth UI component (future task)
+            }
             Action::None => {}
         }
     }
