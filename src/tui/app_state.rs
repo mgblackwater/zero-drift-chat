@@ -2,7 +2,8 @@ use ratatui::widgets::ListState;
 use tui_textarea::TextArea;
 
 use crate::config::AppConfig;
-use crate::core::types::{UnifiedChat, UnifiedMessage};
+use crate::core::types::{Platform, UnifiedChat, UnifiedMessage};
+use crate::storage::ScheduledMessage;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
@@ -211,9 +212,6 @@ impl SearchState {
     }
 }
 
-use crate::core::types::Platform;
-use crate::storage::ScheduledMessage;
-
 #[derive(Debug, Clone)]
 pub struct SchedulePromptState {
     pub query: String,
@@ -233,6 +231,7 @@ impl SchedulePromptState {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct ScheduleListState {
     pub messages: Vec<ScheduledMessage>,
     pub selected: usize,
