@@ -255,8 +255,12 @@ pub fn render_message_view(
     // Padding so the last message is never clipped by word-wrap miscalculation
     lines.push(Line::from(""));
     lines.push(Line::from(""));
+    lines.push(Line::from(""));
+    lines.push(Line::from(""));
 
-    // Auto-scroll: estimate total visual lines accounting for word-wrap
+    // Auto-scroll: estimate total visual lines accounting for word-wrap.
+    // We use ceiling division (no +1 per line) to avoid over-estimating, and
+    // rely on the 4 blank padding lines above to absorb any remaining error.
     let visible_height = area.height.saturating_sub(2) as usize; // subtract borders
     let content_width = area.width.saturating_sub(2) as usize; // subtract borders
     let total_lines: usize = lines
@@ -269,8 +273,8 @@ pub fn render_message_view(
             if line_width == 0 {
                 1
             } else {
-                // +1 accounts for ratatui word-wrap sometimes needing an extra line
-                1 + line_width / content_width
+                // ceiling division: how many rows does this line occupy after wrapping?
+                (line_width + content_width - 1) / content_width
             }
         })
         .sum();
