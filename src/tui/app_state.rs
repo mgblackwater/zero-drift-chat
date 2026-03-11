@@ -290,6 +290,7 @@ impl TelegramAuthStage {
     }
 }
 
+#[derive(Debug)]
 pub struct TelegramAuthState {
     pub stage: TelegramAuthStage,
     pub input: String,
