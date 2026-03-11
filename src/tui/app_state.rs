@@ -12,6 +12,7 @@ pub enum InputMode {
     Renaming,
     ChatMenu,
     Searching,
+    MessageSelect,
 }
 
 // --- Settings overlay types ---
@@ -140,10 +141,18 @@ impl ChatMenuItem {
     pub fn label(&self, is_pinned: bool, is_muted: bool) -> &'static str {
         match self {
             ChatMenuItem::TogglePin => {
-                if is_pinned { "Unpin" } else { "Pin" }
+                if is_pinned {
+                    "Unpin"
+                } else {
+                    "Pin"
+                }
             }
             ChatMenuItem::ToggleMute => {
-                if is_muted { "Unmute" } else { "Mute" }
+                if is_muted {
+                    "Unmute"
+                } else {
+                    "Mute"
+                }
             }
         }
     }
@@ -186,13 +195,17 @@ impl ChatMenuState {
 #[derive(Debug, Clone)]
 pub struct SearchState {
     pub query: String,
-    pub results: Vec<usize>,  // indices into AppState::chats (top 5)
-    pub selected: usize,      // currently highlighted result index
+    pub results: Vec<usize>, // indices into AppState::chats (top 5)
+    pub selected: usize,     // currently highlighted result index
 }
 
 impl SearchState {
     pub fn new() -> Self {
-        Self { query: String::new(), results: vec![], selected: 0 }
+        Self {
+            query: String::new(),
+            results: vec![],
+            selected: 0,
+        }
     }
 }
 
@@ -224,6 +237,10 @@ pub struct AppState {
     pub enter_sends: bool,
     /// Number of unread messages at the tail of `messages` when a chat was opened.
     pub new_message_count: usize,
+    /// Transient copy feedback: Some("Copied!") briefly after y is pressed.
+    pub copy_status: Option<String>,
+    /// Index into `messages` of the currently highlighted message in MessageSelect mode.
+    pub selected_message_idx: Option<usize>,
 }
 
 impl AppState {
@@ -252,6 +269,8 @@ impl AppState {
             ai_debug_log: Vec::new(),
             enter_sends: true,
             new_message_count: 0,
+            copy_status: None,
+            selected_message_idx: None,
         }
     }
 
@@ -343,7 +362,9 @@ impl AppState {
             if let Some(chat) = self.chats.get(idx) {
                 self.chat_menu_state = Some(ChatMenuState::new(
                     chat.id.clone(),
-                    chat.display_name.clone().unwrap_or_else(|| chat.name.clone()),
+                    chat.display_name
+                        .clone()
+                        .unwrap_or_else(|| chat.name.clone()),
                     chat.is_pinned,
                     chat.is_muted,
                 ));
@@ -368,5 +389,39 @@ impl AppState {
 
     pub fn has_unread(&self) -> bool {
         self.chats.iter().any(|c| !c.is_muted && c.unread_count > 0)
+    }
+
+    /// Enter message-selection mode, starting at the last message.
+    pub fn enter_message_select(&mut self) {
+        if self.messages.is_empty() {
+            return;
+        }
+        self.selected_message_idx = Some(self.messages.len() - 1);
+        self.input_mode = InputMode::MessageSelect;
+        self.active_panel = ActivePanel::MessageView;
+    }
+
+    /// Exit message-selection mode.
+    pub fn exit_message_select(&mut self) {
+        self.selected_message_idx = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    /// Move selection up (toward older messages).
+    pub fn message_select_prev(&mut self) {
+        if let Some(idx) = self.selected_message_idx {
+            if idx > 0 {
+                self.selected_message_idx = Some(idx - 1);
+            }
+        }
+    }
+
+    /// Move selection down (toward newer messages).
+    pub fn message_select_next(&mut self) {
+        if let Some(idx) = self.selected_message_idx {
+            if idx + 1 < self.messages.len() {
+                self.selected_message_idx = Some(idx + 1);
+            }
+        }
     }
 }

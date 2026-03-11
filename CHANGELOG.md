@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.3.2 — 2026-03-11
+
+### Copy messages to clipboard
+
+- Press `y` in Normal mode to instantly copy the **last message** in the current chat to the clipboard
+- Press `v` in Normal mode to enter **Message Select mode** — a vim-style selection overlay
+  - `j` / `↓` and `k` / `↑` navigate between messages; the selected message is highlighted with a cyan `▌` gutter and blue background
+  - `y` or `Enter` copies the selected message text and exits Select mode
+  - `Esc` / `q` cancels without copying
+- Clipboard is written via the **OSC 52** terminal escape sequence — works in any modern terminal (kitty, iTerm2, tmux with `set-clipboard on`, etc.) without external tools
+- A brief **"Copied!"** flash appears in the status bar to confirm the copy
+
 ## v0.3.1 — 2026-03-05
 
 - Newsletter chats (`@newsletter` JIDs) now show a `[NL]` tag and are excluded from the unread count header

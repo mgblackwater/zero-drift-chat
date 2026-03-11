@@ -16,3 +16,10 @@
 - In-app settings overlay — toggle providers and log level without editing files
 - Chat rename — press `r` to set custom display names (persisted across restarts)
 - Version displayed in status bar
+
+## Copy to Clipboard
+- Press `y` to copy the last message in the current chat to the clipboard
+- Press `v` to enter **Message Select mode**: navigate with `j`/`k`, copy with `y` or `Enter`, cancel with `Esc`
+- Uses OSC 52 terminal escape sequence — no external clipboard tool required
+- Works in kitty, iTerm2, and tmux (with `set-clipboard on`)
+- Confirmation flash "Copied!" shown in the status bar
