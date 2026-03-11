@@ -16,6 +16,7 @@ pub fn render_status_bar(
     mock_enabled: bool,
     whatsapp_connected: bool,
     copy_status: Option<&str>,
+    schedule_status: Option<&str>,
 ) {
     let hints = match mode {
         InputMode::Normal => "q:Quit | i:Insert | s:Settings | r:Rename | x:Menu | y:Copy last | v:Select msg | Tab:Switch",
@@ -81,8 +82,18 @@ pub fn render_status_bar(
     spans.push(Span::styled("WA", Style::default().fg(Color::DarkGray)));
     spans.push(Span::styled(" │ ", sep));
 
-    // Show copy feedback if present, otherwise show normal hints
-    if let Some(status) = copy_status {
+    // Show schedule feedback (highest priority), then copy feedback, then normal hints
+    if let Some(sched) = schedule_status {
+        let color = if sched.starts_with("Could not") {
+            Color::Red
+        } else {
+            Color::Green
+        };
+        spans.push(Span::styled(
+            sched,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ));
+    } else if let Some(status) = copy_status {
         spans.push(Span::styled(
             status,
             Style::default()
