@@ -39,7 +39,10 @@ src/providers/telegram/
 - `tx: Option<mpsc::UnboundedSender<ProviderEvent>>`
 - `auth_status: AuthStatus`
 - `session_path: String`
-- `auth_tx: mpsc::UnboundedSender<String>` — channel for TUI to send auth inputs
+- `auth_tx: mpsc::UnboundedSender<String>` — sends auth inputs from TUI to provider's auth task
+- `auth_rx: mpsc::UnboundedReceiver<String>` — provider's auth task waits on this for user input
+
+**Channel wiring:** `TelegramProvider::new()` creates an `mpsc::unbounded_channel::<String>()`. `auth_tx` is cloned and stored in `app.rs` as `telegram_auth_tx: Option<mpsc::UnboundedSender<String>>`. When the TUI handles `TelegramAuthInput(value)`, it sends via `telegram_auth_tx`. The provider's auth task awaits on `auth_rx`. This is analogous to the `db_summary_tx`/`db_summary_rx` pattern already in `app.rs`.
 
 ### Modified files
 
@@ -65,7 +68,7 @@ api_hash = ""
 
 `api_id` and `api_hash` are obtained from https://my.telegram.org (under "API development tools"). If `enabled = true` but `api_id = 0` or `api_hash` is empty, the provider logs an error and is skipped — no crash.
 
-New `TelegramConfig` struct in `settings.rs`:
+New `TelegramConfig` struct in `settings.rs`, and `telegram: TelegramConfig` added to `AppConfig` with a corresponding `Default` impl:
 
 ```rust
 pub struct TelegramConfig {
@@ -90,10 +93,12 @@ Default: `enabled = false`.
 ### New `ProviderEvent` variants
 
 ```rust
-AuthPhonePrompt(Platform),      // provider needs phone number
-AuthOtpPrompt(Platform),        // provider needs OTP
-AuthPasswordPrompt(Platform),   // provider needs 2FA password
+AuthPhonePrompt(Platform, Option<String>),    // provider needs phone number; Some(msg) on retry error
+AuthOtpPrompt(Platform, Option<String>),      // provider needs OTP; Some(msg) = "Wrong code, try again"
+AuthPasswordPrompt(Platform, Option<String>), // provider needs 2FA password; Some(msg) on wrong password
 ```
+
+The `Option<String>` carries an error hint shown in the overlay on retry (e.g. "Wrong code, try again").
 
 ### New `AppEvent` variant
 
@@ -130,7 +135,7 @@ pub struct TelegramAuthState {
 pub enum TelegramAuthStage { Phone, Otp, Password }
 ```
 
-The overlay renders as a centered modal (similar to the settings overlay) with a prompt string and a single-line input. `Enter` submits; `Esc` is not meaningful here (auth must complete). On submit, `TelegramAuthInput(value)` is sent back to the provider via `auth_tx`.
+The overlay renders as a centered modal (similar to the settings overlay) with a prompt string, an optional error message (from the retry hint), and a single-line input. `Enter` submits. `Esc` cancels the auth and leaves the provider in `NotAuthenticated` state (the overlay closes and Telegram is silently inactive for that session). On submit, `TelegramAuthInput(value)` is sent back to the provider via `auth_tx`.
 
 ### Retry Logic
 
@@ -208,7 +213,7 @@ Calls `client.iter_dialogs()`, collects up to N dialogs, converts each to `Unifi
 
 ### `get_messages(chat_id)`
 
-Calls `client.iter_messages(peer).limit(50)`, converts each to `UnifiedMessage`.
+Calls `client.iter_messages(peer).limit(50)`, converts each to `UnifiedMessage`. `peer` is resolved from `PeerCache` (same as `send_message`).
 
 ### `mark_as_read(chat_id, msg_ids)`
 
