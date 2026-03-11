@@ -19,6 +19,9 @@ use convert::{grammers_message_to_unified, peer_id_to_chat_id, PeerCache};
 
 use grammers_client::client::PasswordToken;
 
+const MAX_DIALOGS: usize = 200;
+const MAX_AUTH_RETRIES: u8 = 3;
+
 /// Messages sent *into* the provider during interactive auth.
 pub enum AuthInput {
     Phone(String),
@@ -91,7 +94,6 @@ impl TelegramProvider {
         let _ = tx.send(ProviderEvent::AuthOtpPrompt(Platform::Telegram, None));
         let mut password_token: Option<PasswordToken> = None;
         let mut otp_retries = 0u8;
-        const MAX_AUTH_RETRIES: u8 = 3;
         loop {
             let code = loop {
                 match auth_rx.recv().await {
@@ -257,6 +259,10 @@ impl MessagingProvider for TelegramProvider {
                                     .bot_api_dialog_id()
                                     .map(peer_id_to_chat_id)
                                     .unwrap_or_else(|| "tg-unknown".to_string());
+                                // Cache peer_ref like NewMessage does
+                                if let Some(peer_ref) = msg.peer_ref().await {
+                                    peer_cache.insert(&chat_id_str, peer_ref);
+                                }
                                 if let Some(unified) = grammers_message_to_unified(&msg, &chat_id_str) {
                                     let _ = update_tx.send(ProviderEvent::NewMessage(unified));
                                 }
@@ -275,7 +281,7 @@ impl MessagingProvider for TelegramProvider {
                             break;
                         }
                         tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
-                        backoff_secs = (backoff_secs * 2).min(4);
+                        backoff_secs = (backoff_secs * 2).min(30);
                     }
                 }
             }
@@ -344,7 +350,6 @@ impl MessagingProvider for TelegramProvider {
 
         let mut dialogs = client.iter_dialogs();
         let mut chats = Vec::new();
-        const MAX_DIALOGS: usize = 200;
         let mut count = 0;
 
         while let Some(dialog) = dialogs
@@ -377,7 +382,7 @@ impl MessagingProvider for TelegramProvider {
                 }
             });
 
-            let is_group = matches!(peer, Peer::Group(_));
+            let is_group = matches!(peer, Peer::Group(_) | Peer::Channel(_));
 
             chats.push(UnifiedChat {
                 id: chat_id_str,
@@ -431,12 +436,15 @@ impl MessagingProvider for TelegramProvider {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
-        if let Some(peer) = self.peer_cache.get(chat_id) {
-            client
-                .mark_as_read(peer)
-                .await
-                .map_err(|e| anyhow::anyhow!("mark_as_read failed: {}", e))?;
-        }
+        let peer = self
+            .peer_cache
+            .get(chat_id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown chat_id (not in peer cache): {}", chat_id))?;
+
+        client
+            .mark_as_read(peer)
+            .await
+            .map_err(|e| anyhow::anyhow!("mark_as_read failed: {}", e))?;
         Ok(())
     }
 
