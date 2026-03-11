@@ -90,6 +90,8 @@ impl TelegramProvider {
         // Prompt for OTP; retry on invalid code.
         let _ = tx.send(ProviderEvent::AuthOtpPrompt(Platform::Telegram, None));
         let mut password_token: Option<PasswordToken> = None;
+        let mut otp_retries = 0u8;
+        const MAX_AUTH_RETRIES: u8 = 3;
         loop {
             let code = loop {
                 match auth_rx.recv().await {
@@ -113,11 +115,15 @@ impl TelegramProvider {
                     break;
                 }
                 Err(SignInError::InvalidCode) => {
+                    otp_retries += 1;
+                    if otp_retries >= MAX_AUTH_RETRIES {
+                        let _ = tx.send(ProviderEvent::AuthStatusChanged(Platform::Telegram, AuthStatus::Failed));
+                        return Err(anyhow::anyhow!("Too many wrong OTP attempts"));
+                    }
                     let _ = tx.send(ProviderEvent::AuthOtpPrompt(
                         Platform::Telegram,
-                        Some("Invalid code, try again".to_string()),
+                        Some("Wrong code, try again".to_string()),
                     ));
-                    continue;
                 }
                 Err(e) => return Err(anyhow::anyhow!("sign_in error: {}", e)),
             }
@@ -126,6 +132,7 @@ impl TelegramProvider {
         // 2FA password loop.
         let mut pt = password_token.unwrap();
         let _ = tx.send(ProviderEvent::AuthPasswordPrompt(Platform::Telegram, None));
+        let mut pw_retries = 0u8;
         loop {
             let password = loop {
                 match auth_rx.recv().await {
@@ -146,11 +153,15 @@ impl TelegramProvider {
                 }
                 Err(SignInError::InvalidPassword(new_token)) => {
                     pt = new_token;
+                    pw_retries += 1;
+                    if pw_retries >= MAX_AUTH_RETRIES {
+                        let _ = tx.send(ProviderEvent::AuthStatusChanged(Platform::Telegram, AuthStatus::Failed));
+                        return Err(anyhow::anyhow!("Too many wrong 2FA password attempts"));
+                    }
                     let _ = tx.send(ProviderEvent::AuthPasswordPrompt(
                         Platform::Telegram,
-                        Some("Invalid password, try again".to_string()),
+                        Some("Wrong password, try again".to_string()),
                     ));
-                    continue;
                 }
                 Err(e) => return Err(anyhow::anyhow!("check_password error: {}", e)),
             }
@@ -214,30 +225,57 @@ impl MessagingProvider for TelegramProvider {
             let mut stream = update_client
                 .stream_updates(updates_rx, UpdatesConfiguration::default())
                 .await;
+            let mut consecutive_errors = 0u8;
+            let mut backoff_secs = 1u64;
             loop {
                 match stream.next().await {
                     Ok(update) => {
-                        if let Update::NewMessage(msg) = update {
-                            let peer_id = msg.peer_id();
-                            let chat_id_str = peer_id
-                                .bot_api_dialog_id()
-                                .map(peer_id_to_chat_id)
-                                .unwrap_or_else(|| "tg-unknown".to_string());
+                        consecutive_errors = 0;
+                        backoff_secs = 1;
+                        match update {
+                            Update::NewMessage(msg) if !msg.outgoing() => {
+                                let peer_id = msg.peer_id();
+                                let chat_id_str = peer_id
+                                    .bot_api_dialog_id()
+                                    .map(peer_id_to_chat_id)
+                                    .unwrap_or_else(|| "tg-unknown".to_string());
 
-                            // Cache peer ref if available (async lookup from session).
-                            if let Some(peer_ref) = msg.peer_ref().await {
-                                peer_cache.insert(&chat_id_str, peer_ref);
+                                // Cache peer ref if available (async lookup from session).
+                                if let Some(peer_ref) = msg.peer_ref().await {
+                                    peer_cache.insert(&chat_id_str, peer_ref);
+                                }
+
+                                if let Some(unified) = grammers_message_to_unified(&msg, &chat_id_str)
+                                {
+                                    let _ = update_tx.send(ProviderEvent::NewMessage(unified));
+                                }
                             }
-
-                            if let Some(unified) = grammers_message_to_unified(&msg, &chat_id_str)
-                            {
-                                let _ = update_tx.send(ProviderEvent::NewMessage(unified));
+                            Update::MessageEdited(msg) => {
+                                // Re-emit edited messages as new (v1 simplification)
+                                let peer_id = msg.peer_id();
+                                let chat_id_str = peer_id
+                                    .bot_api_dialog_id()
+                                    .map(peer_id_to_chat_id)
+                                    .unwrap_or_else(|| "tg-unknown".to_string());
+                                if let Some(unified) = grammers_message_to_unified(&msg, &chat_id_str) {
+                                    let _ = update_tx.send(ProviderEvent::NewMessage(unified));
+                                }
+                            }
+                            _ => {
+                                tracing::trace!("Unhandled Telegram update");
                             }
                         }
                     }
                     Err(e) => {
                         tracing::error!("Telegram update stream error: {}", e);
-                        break;
+                        consecutive_errors += 1;
+                        if consecutive_errors >= 3 {
+                            let _ = update_tx.send(ProviderEvent::AuthStatusChanged(Platform::Telegram, AuthStatus::Failed));
+                            tracing::error!("Telegram: 3 consecutive update errors, stopping");
+                            break;
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
+                        backoff_secs = (backoff_secs * 2).min(4);
                     }
                 }
             }
@@ -306,12 +344,18 @@ impl MessagingProvider for TelegramProvider {
 
         let mut dialogs = client.iter_dialogs();
         let mut chats = Vec::new();
+        const MAX_DIALOGS: usize = 200;
+        let mut count = 0;
 
         while let Some(dialog) = dialogs
             .next()
             .await
             .map_err(|e| anyhow::anyhow!("iter_dialogs error: {}", e))?
         {
+            if count >= MAX_DIALOGS {
+                break;
+            }
+            count += 1;
             let peer = dialog.peer();
             let peer_ref = dialog.peer_ref();
             let peer_id = peer.id();
