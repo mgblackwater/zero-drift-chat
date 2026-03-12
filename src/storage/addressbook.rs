@@ -81,8 +81,11 @@ impl AddressBook {
     }
 
     /// All contacts, for search/display. Returns (phone, name).
+    #[allow(dead_code)]
     pub fn get_all_contacts(&self) -> Result<Vec<(String, String)>> {
-        let mut stmt = self.conn.prepare("SELECT phone, name FROM contacts ORDER BY name")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT phone, name FROM contacts ORDER BY name")?;
         let rows = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;

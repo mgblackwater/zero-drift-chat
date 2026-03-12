@@ -27,6 +27,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_messages_for_chat(&self, chat_id: &str) -> Result<Vec<UnifiedMessage>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, chat_id, platform, sender, content, timestamp, status, is_outgoing
@@ -58,10 +59,20 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let mut result = Vec::new();
-        for (id, chat_id, platform_str, sender, content_json, timestamp_str, status_str, is_outgoing) in messages {
+        for (
+            id,
+            chat_id,
+            platform_str,
+            sender,
+            content_json,
+            timestamp_str,
+            status_str,
+            is_outgoing,
+        ) in messages
+        {
             let platform = parse_platform(&platform_str);
-            let content: MessageContent = serde_json::from_str(&content_json)
-                .unwrap_or(MessageContent::Text(content_json));
+            let content: MessageContent =
+                serde_json::from_str(&content_json).unwrap_or(MessageContent::Text(content_json));
             let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now());
@@ -117,10 +128,20 @@ impl Database {
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let mut result = Vec::new();
-        for (id, chat_id, platform_str, sender, content_json, timestamp_str, status_str, is_outgoing) in messages {
+        for (
+            id,
+            chat_id,
+            platform_str,
+            sender,
+            content_json,
+            timestamp_str,
+            status_str,
+            is_outgoing,
+        ) in messages
+        {
             let platform = parse_platform(&platform_str);
-            let content: MessageContent = serde_json::from_str(&content_json)
-                .unwrap_or(MessageContent::Text(content_json));
+            let content: MessageContent =
+                serde_json::from_str(&content_json).unwrap_or(MessageContent::Text(content_json));
             let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now());

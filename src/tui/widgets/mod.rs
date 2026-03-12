@@ -7,3 +7,4 @@ pub mod schedule_overlay;
 pub mod search_overlay;
 pub mod settings_overlay;
 pub mod status_bar;
+pub mod telegram_auth_overlay;

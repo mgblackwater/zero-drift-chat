@@ -34,6 +34,7 @@ pub fn render_status_bar(
         InputMode::MessageSelect => "j/k:Navigate | y/Enter:Copy | Esc:Cancel",
         InputMode::SchedulePrompt => "Type time (e.g. 'tomorrow 9am', 'fri 3pm', 'Mar 15 14:30') | Enter:Confirm | Esc:Cancel",
         InputMode::ScheduleList => "j/k:Navigate | d:Cancel | Esc/q:Close",
+        InputMode::TelegramAuth => "Type | Enter:Confirm | Esc:Cancel",
     };
 
     // Mode pill: colored badge on the left, rest of bar stays on black
@@ -47,6 +48,7 @@ pub fn render_status_bar(
         InputMode::MessageSelect => (" SELECT ", Color::Blue, Color::White),
         InputMode::SchedulePrompt => (" SCHEDULE ", Color::Green, Color::Black),
         InputMode::ScheduleList => (" SCHEDULED ", Color::Green, Color::Black),
+        InputMode::TelegramAuth => (" AUTH ", Color::Green, Color::Black),
     };
 
     let sep = Style::default().fg(Color::DarkGray);

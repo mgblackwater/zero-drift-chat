@@ -153,9 +153,8 @@ mod tests {
             display_name: None,
             last_message: None,
             unread_count: 0,
-            is_group: false,
+            kind: crate::core::types::ChatKind::Chat,
             is_pinned: false,
-            is_newsletter: false,
             is_muted: false,
         })
         .unwrap();

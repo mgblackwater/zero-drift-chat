@@ -16,6 +16,7 @@ pub enum InputMode {
     MessageSelect,
     SchedulePrompt,
     ScheduleList,
+    TelegramAuth,
 }
 
 // --- Settings overlay types ---
@@ -259,6 +260,55 @@ impl ScheduleListState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TelegramAuthStage {
+    Phone,
+    Otp,
+    Password,
+}
+
+impl TelegramAuthStage {
+    pub fn prompt(&self) -> &'static str {
+        match self {
+            TelegramAuthStage::Phone => {
+                "Enter your Telegram phone number (with country code, e.g. +1234567890):"
+            }
+            TelegramAuthStage::Otp => "Enter the code Telegram sent you:",
+            TelegramAuthStage::Password => "Enter your 2FA password:",
+        }
+    }
+
+    pub fn title(&self) -> &'static str {
+        match self {
+            TelegramAuthStage::Phone => " Telegram Login — Phone ",
+            TelegramAuthStage::Otp => " Telegram Login — Code ",
+            TelegramAuthStage::Password => " Telegram Login — 2FA Password ",
+        }
+    }
+
+    pub fn is_password(&self) -> bool {
+        matches!(self, TelegramAuthStage::Password)
+    }
+}
+
+#[derive(Debug)]
+pub struct TelegramAuthState {
+    pub stage: TelegramAuthStage,
+    pub input: String,
+    /// Optional error hint from retry (e.g. "Wrong code, try again")
+    pub error_hint: Option<String>,
+}
+
+impl TelegramAuthState {
+    pub fn new(stage: TelegramAuthStage, error_hint: Option<String>) -> Self {
+        Self {
+            stage,
+            input: String::new(),
+            error_hint,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivePanel {
     ChatList,
     MessageView,
@@ -279,6 +329,7 @@ pub struct AppState {
     pub settings_state: Option<SettingsState>,
     pub chat_menu_state: Option<ChatMenuState>,
     pub search_state: Option<SearchState>,
+    pub telegram_auth_state: Option<TelegramAuthState>,
     pub ai_suggestion: Option<String>,
     pub ai_status: Option<String>,
     pub ai_debug: bool,
@@ -315,6 +366,7 @@ impl AppState {
             settings_state: None,
             chat_menu_state: None,
             search_state: None,
+            telegram_auth_state: None,
             ai_suggestion: None,
             ai_status: None,
             ai_debug: false,
@@ -477,6 +529,24 @@ impl AppState {
             if idx + 1 < self.messages.len() {
                 self.selected_message_idx = Some(idx + 1);
             }
+        }
+    }
+
+    pub fn open_telegram_auth(&mut self, stage: TelegramAuthStage, error_hint: Option<String>) {
+        self.telegram_auth_state = Some(TelegramAuthState::new(stage, error_hint));
+        self.input_mode = InputMode::TelegramAuth;
+    }
+
+    pub fn close_telegram_auth(&mut self) {
+        self.telegram_auth_state = None;
+        self.input_mode = InputMode::Normal;
+    }
+
+    pub fn take_telegram_auth_input(&mut self) -> String {
+        if let Some(ref mut auth) = self.telegram_auth_state {
+            std::mem::take(&mut auth.input)
+        } else {
+            String::new()
         }
     }
 }

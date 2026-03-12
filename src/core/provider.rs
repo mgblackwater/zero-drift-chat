@@ -16,9 +16,18 @@ pub enum ProviderEvent {
     AuthQrCode(String),
     SyncCompleted,
     SelfRead { chat_id: String },
+    // Telegram interactive auth — Option<String> carries retry error hint
+    AuthPhonePrompt(Platform, Option<String>),
+    AuthOtpPrompt(Platform, Option<String>),
+    AuthPasswordPrompt(Platform, Option<String>),
+    /// A WhatsApp LID↔PN JID mapping was discovered at runtime.
+    /// `lid` and `pn` are raw JID strings (no `wa-` prefix).
+    /// The app layer should persist this and remove the stale `wa-<lid>` chat entry.
+    LidPnMappingDiscovered { lid: String, pn: String },
 }
 
 #[async_trait]
+#[allow(dead_code)]
 pub trait MessagingProvider: Send + Sync {
     async fn start(&mut self, tx: mpsc::UnboundedSender<ProviderEvent>) -> Result<()>;
     async fn stop(&mut self) -> Result<()>;

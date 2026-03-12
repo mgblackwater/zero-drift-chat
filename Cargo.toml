@@ -7,7 +7,7 @@ edition = "2021"
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["event-stream"] }
 tokio = { version = "1", features = ["full"] }
-rusqlite = { version = "0.37", features = ["bundled"] }
+rusqlite = { version = "0.37" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -28,3 +28,5 @@ qrcode = "0.14"
 tui-textarea = { version = "0.7", features = ["crossterm"] }
 reqwest = { version = "0.12", features = ["json"] }
 tokio-util = { version = "0.7", features = ["rt"] }
+grammers-client = { git = "https://codeberg.org/Lonami/grammers", package = "grammers-client" }
+grammers-session = { git = "https://codeberg.org/Lonami/grammers", package = "grammers-session", default-features = false, features = ["serde"] }

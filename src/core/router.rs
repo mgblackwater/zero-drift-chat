@@ -40,6 +40,7 @@ impl MessageRouter {
         events
     }
 
+    #[allow(dead_code)]
     pub fn get_provider(&self, platform: Platform) -> Option<&dyn MessagingProvider> {
         self.providers
             .iter()

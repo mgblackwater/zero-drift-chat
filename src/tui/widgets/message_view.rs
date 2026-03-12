@@ -37,7 +37,7 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
         // Strip trailing sentence punctuation that is not part of the URL
         let raw_url = &url_text[..url_end];
         let stripped_len = raw_url
-            .trim_end_matches(|c| matches!(c, '.' | ',' | ')' | ']' | '>' | '!' | '?'))
+            .trim_end_matches(['.', ',', ')', ']', '>', '!', '?'])
             .len();
         let (url_part, punct_part) = raw_url.split_at(stripped_len);
         if !url_part.is_empty() {
@@ -51,6 +51,7 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
     result
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_message_view(
     f: &mut Frame,
     area: Rect,
@@ -274,7 +275,7 @@ pub fn render_message_view(
                 1
             } else {
                 // ceiling division: how many rows does this line occupy after wrapping?
-                (line_width + content_width - 1) / content_width
+                line_width.div_ceil(content_width)
             }
         })
         .sum();

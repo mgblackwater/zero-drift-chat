@@ -52,6 +52,10 @@ pub enum Action {
     ScheduleListPrev,
     ScheduleListDelete,
     ScheduleListClose,
+    TelegramAuthChar(char),
+    TelegramAuthBackspace,
+    TelegramAuthSubmit,
+    TelegramAuthCancel,
     None,
 }
 
@@ -66,6 +70,7 @@ pub fn map_key(key: KeyEvent, mode: InputMode, enter_sends: bool) -> Action {
         InputMode::MessageSelect => map_message_select_mode(key),
         InputMode::SchedulePrompt => map_schedule_prompt_mode(key),
         InputMode::ScheduleList => map_schedule_list_mode(key),
+        InputMode::TelegramAuth => map_telegram_auth_mode(key),
     }
 }
 
@@ -190,6 +195,16 @@ fn map_schedule_list_mode(key: KeyEvent) -> Action {
         KeyCode::Char('k') | KeyCode::Up => Action::ScheduleListPrev,
         KeyCode::Char('d') => Action::ScheduleListDelete,
         KeyCode::Esc | KeyCode::Char('q') => Action::ScheduleListClose,
+        _ => Action::None,
+    }
+}
+
+fn map_telegram_auth_mode(key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => Action::TelegramAuthCancel,
+        KeyCode::Enter => Action::TelegramAuthSubmit,
+        KeyCode::Backspace => Action::TelegramAuthBackspace,
+        KeyCode::Char(c) => Action::TelegramAuthChar(c),
         _ => Action::None,
     }
 }

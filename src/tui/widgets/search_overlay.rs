@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, block::Title},
+    widgets::{block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -17,7 +17,11 @@ pub fn render_search_overlay(
 ) {
     let result_count = state.results.len().min(5);
     // 2 borders + 1 query line + (1 divider + N results) if any results
-    let inner_height = 1 + if result_count > 0 { 1 + result_count } else { 0 };
+    let inner_height = 1 + if result_count > 0 {
+        1 + result_count
+    } else {
+        0
+    };
     let height = (2 + inner_height as u16).min(chat_list_area.height);
 
     let popup_area = Rect {
@@ -30,8 +34,18 @@ pub fn render_search_overlay(
     f.render_widget(Clear, popup_area);
 
     let title = Title::from(Line::from(vec![
-        Span::styled(" / ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Span::styled("Find Chat ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " / ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "Find Chat ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
     ]));
     let block = Block::default()
         .title(title)
@@ -41,10 +55,23 @@ pub fn render_search_overlay(
     f.render_widget(block, popup_area);
 
     // Query line
-    let query_area = Rect { x: inner.x, y: inner.y, width: inner.width, height: 1 };
+    let query_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: 1,
+    };
     let query_line = Line::from(vec![
-        Span::styled("/ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{}▌", state.query), Style::default().fg(Color::White)),
+        Span::styled(
+            "/ ",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{}▌", state.query),
+            Style::default().fg(Color::White),
+        ),
     ]);
     f.render_widget(Paragraph::new(query_line), query_area);
 
@@ -53,7 +80,12 @@ pub fn render_search_overlay(
     }
 
     // Divider
-    let sep_area = Rect { x: inner.x, y: inner.y + 1, width: inner.width, height: 1 };
+    let sep_area = Rect {
+        x: inner.x,
+        y: inner.y + 1,
+        width: inner.width,
+        height: 1,
+    };
     f.render_widget(
         Paragraph::new("─".repeat(inner.width as usize))
             .style(Style::default().fg(Color::DarkGray)),

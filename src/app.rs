@@ -43,6 +43,7 @@ pub struct App {
     db_summary_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
     db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
     schedule_status_ticks: u8,
+    telegram_auth_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::providers::telegram::AuthInput>>,
 }
 
 impl App {
@@ -91,6 +92,7 @@ impl App {
             db_summary_tx,
             db_summary_rx,
             schedule_status_ticks: 0,
+            telegram_auth_tx: None,
         }
     }
 
@@ -117,8 +119,33 @@ impl App {
                 "{}/whatsapp-session.db",
                 self.config.general.data_dir
             );
-            let wa = WhatsAppProvider::new(session_path);
+            let lid_mappings = self.db.load_lid_mappings().unwrap_or_default();
+            let wa = WhatsAppProvider::new_with_lid_mappings(session_path, lid_mappings);
             self.router.register_provider(Box::new(wa));
+        }
+
+        if self.config.telegram.enabled {
+            let api_id = self.config.telegram.api_id;
+            let api_hash = self.config.telegram.api_hash.clone();
+
+            if api_id == 0 || api_hash.is_empty() {
+                tracing::error!(
+                    "Telegram enabled but api_id or api_hash not configured — skipping"
+                );
+            } else {
+                let session_path = format!(
+                    "{}/telegram-session.db",
+                    self.config.general.data_dir
+                );
+                let tg = crate::providers::telegram::TelegramProvider::new(
+                    api_id,
+                    api_hash,
+                    session_path,
+                );
+                // Stash the auth_tx so we can forward TUI input to the provider's auth task
+                self.telegram_auth_tx = Some(tg.auth_tx.clone());
+                self.router.register_provider(Box::new(tg));
+            }
         }
 
         // Start all providers
@@ -134,6 +161,7 @@ impl App {
                 .filter(|c| match c.platform {
                     Platform::Mock => self.config.mock_provider.enabled,
                     Platform::WhatsApp => self.config.whatsapp.enabled,
+                    Platform::Telegram => self.config.telegram.enabled,
                     _ => true,
                 })
                 .collect();
@@ -177,6 +205,8 @@ impl App {
 
         // Set up terminal
         enable_raw_mode()?;
+        // EventStream::new() requires raw mode to be active — start the task now.
+        events.start();
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableBracketedPaste)?;
         let backend = CrosstermBackend::new(stdout);
@@ -490,6 +520,18 @@ impl App {
                             _ => {}
                         }
                     }
+                    if platform == Platform::Telegram {
+                        match status {
+                            AuthStatus::Authenticated => {
+                                self.state.close_telegram_auth();
+                            }
+                            AuthStatus::Failed => {
+                                self.state.close_telegram_auth();
+                                tracing::error!("Telegram authentication failed");
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 ProviderEvent::AuthQrCode(code) => {
                     tracing::info!("QR code received for WhatsApp pairing");
@@ -511,6 +553,47 @@ impl App {
                     tracing::info!("Sync completed, refreshing current chat");
                     self.load_selected_chat_messages();
                     self.refresh_title();
+                }
+                ProviderEvent::AuthPhonePrompt(platform, error_hint) => {
+                    if platform == Platform::Telegram {
+                        self.state.open_telegram_auth(
+                            crate::tui::app_state::TelegramAuthStage::Phone,
+                            error_hint,
+                        );
+                    }
+                }
+                ProviderEvent::AuthOtpPrompt(platform, error_hint) => {
+                    if platform == Platform::Telegram {
+                        self.state.open_telegram_auth(
+                            crate::tui::app_state::TelegramAuthStage::Otp,
+                            error_hint,
+                        );
+                    }
+                }
+                ProviderEvent::AuthPasswordPrompt(platform, error_hint) => {
+                    if platform == Platform::Telegram {
+                        self.state.open_telegram_auth(
+                            crate::tui::app_state::TelegramAuthStage::Password,
+                            error_hint,
+                        );
+                    }
+                }
+                ProviderEvent::LidPnMappingDiscovered { lid, pn } => {
+                    if let Err(e) = self.db.save_lid_mapping(&lid, &pn) {
+                        tracing::error!("Failed to save LID mapping: {}", e);
+                    }
+                    // Remove stale @lid chat from DB and in-memory state
+                    let lid_chat_id = format!("wa-{}", lid);
+                    if let Err(e) = self.db.delete_lid_chat(&lid_chat_id) {
+                        tracing::error!("Failed to delete stale @lid chat: {}", e);
+                    }
+                    self.state.chats.retain(|c| c.id != lid_chat_id);
+                    tracing::info!(
+                        "LID→PN mapping recorded: {} → {}; removed stale chat {}",
+                        lid,
+                        pn,
+                        lid_chat_id
+                    );
                 }
             }
         }
@@ -948,6 +1031,43 @@ impl App {
                 self.state.schedule_list_state = None;
                 self.state.input_mode = InputMode::Normal;
             }
+            Action::TelegramAuthChar(c) => {
+                if let Some(ref mut auth) = self.state.telegram_auth_state {
+                    if !c.is_control() {
+                        auth.input.push(c);
+                    }
+                }
+            }
+            Action::TelegramAuthBackspace => {
+                if let Some(ref mut auth) = self.state.telegram_auth_state {
+                    auth.input.pop();
+                }
+            }
+            Action::TelegramAuthSubmit => {
+                let value = self.state.take_telegram_auth_input();
+                if !value.trim().is_empty() {
+                    if let (Some(ref tx), Some(ref auth)) =
+                        (&self.telegram_auth_tx, &self.state.telegram_auth_state)
+                    {
+                        use crate::providers::telegram::AuthInput;
+                        use crate::tui::app_state::TelegramAuthStage;
+                        let auth_input = match auth.stage {
+                            TelegramAuthStage::Phone => AuthInput::Phone(value),
+                            TelegramAuthStage::Otp => AuthInput::Otp(value),
+                            TelegramAuthStage::Password => AuthInput::Password(value),
+                        };
+                        if tx.send(auth_input).is_err() {
+                            tracing::warn!("Telegram auth_tx send failed — receiver may have dropped");
+                        }
+                    }
+                    // Close overlay; it will re-open if auth needs another step
+                    self.state.close_telegram_auth();
+                }
+            }
+            Action::TelegramAuthCancel => {
+                self.state.close_telegram_auth();
+                tracing::info!("Telegram auth cancelled by user");
+            }
             Action::None => {}
         }
     }
@@ -1106,7 +1226,7 @@ fn copy_to_clipboard(text: &str) {
 /// Minimal base64 encoder (no external crate needed).
 fn base64_encode(input: &[u8]) -> String {
     const ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity((input.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
         let b1 = chunk.get(1).copied().unwrap_or(0) as u32;

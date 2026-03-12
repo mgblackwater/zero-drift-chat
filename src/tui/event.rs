@@ -5,6 +5,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AppEvent {
     Key(crossterm::event::KeyEvent),
     Paste(String),
@@ -19,13 +20,26 @@ pub enum AppEvent {
 pub struct EventHandler {
     rx: mpsc::UnboundedReceiver<AppEvent>,
     pub tx: mpsc::UnboundedSender<AppEvent>,
-    _task: tokio::task::JoinHandle<()>,
+    tick_rate_ms: u64,
+    render_rate_ms: u64,
+    _task: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl EventHandler {
+    /// Create the handler and its channels. Does NOT spawn the event-reading task yet.
+    /// Call [`start`] after `enable_raw_mode()` to begin reading terminal events.
     pub fn new(tick_rate_ms: u64, render_rate_ms: u64) -> Self {
         let (tx, rx) = mpsc::unbounded_channel::<AppEvent>();
-        let task_tx = tx.clone();
+        Self { rx, tx, tick_rate_ms, render_rate_ms, _task: None }
+    }
+
+    /// Spawn the background task that reads terminal events via `EventStream`.
+    /// Must be called **after** `crossterm::terminal::enable_raw_mode()` has been called,
+    /// otherwise `EventStream::new()` will panic with "reader source not set".
+    pub fn start(&mut self) {
+        let task_tx = self.tx.clone();
+        let tick_rate_ms = self.tick_rate_ms;
+        let render_rate_ms = self.render_rate_ms;
 
         let task = tokio::spawn(async move {
             let mut reader = EventStream::new();
@@ -47,15 +61,16 @@ impl EventHandler {
                         }
                     }
                     Some(Ok(event)) = reader.next() => {
+                        #[allow(clippy::collapsible_match)]
                         match event {
-                            Event::Key(key) => {
-                                // Windows fix: only handle Press events to avoid duplicates
-                                if key.kind == KeyEventKind::Press {
-                                    if task_tx.send(AppEvent::Key(key)).is_err() {
-                                        break;
-                                    }
-                                }
+                            // Windows fix: only handle Press events to avoid duplicates
+                            Event::Key(key)
+                                if key.kind == KeyEventKind::Press
+                                    && task_tx.send(AppEvent::Key(key)).is_err() =>
+                            {
+                                break;
                             }
+                            Event::Key(_) => {}
                             Event::Paste(text) => {
                                 if task_tx.send(AppEvent::Paste(text)).is_err() {
                                     break;
@@ -73,7 +88,7 @@ impl EventHandler {
             }
         });
 
-        Self { rx, tx, _task: task }
+        self._task = Some(task);
     }
 
     pub async fn next(&mut self) -> Option<AppEvent> {

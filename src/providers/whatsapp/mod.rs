@@ -22,6 +22,7 @@ pub struct WhatsAppProvider {
     tx: Option<mpsc::UnboundedSender<ProviderEvent>>,
     auth_status: AuthStatus,
     session_db_path: String,
+    initial_lid_mappings: std::collections::HashMap<String, String>,
 }
 
 impl WhatsAppProvider {
@@ -32,6 +33,21 @@ impl WhatsAppProvider {
             tx: None,
             auth_status: AuthStatus::NotAuthenticated,
             session_db_path,
+            initial_lid_mappings: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn new_with_lid_mappings(
+        session_db_path: String,
+        lid_mappings: std::collections::HashMap<String, String>,
+    ) -> Self {
+        Self {
+            client: None,
+            bot_handle: None,
+            tx: None,
+            auth_status: AuthStatus::NotAuthenticated,
+            session_db_path,
+            initial_lid_mappings: lid_mappings,
         }
     }
 }
@@ -56,7 +72,10 @@ impl MessagingProvider for WhatsAppProvider {
         let http_client = UreqHttpClient::new();
 
         let tx_events = tx.clone();
-        let jid_cache = JidCache::new();
+        let jid_cache = JidCache::new_with_mappings(
+            std::mem::take(&mut self.initial_lid_mappings),
+            tx.clone(),
+        );
         let jid_cache_clone = jid_cache.clone();
 
         let mut bot = Bot::builder()
@@ -243,16 +262,22 @@ fn handle_wa_event(
                 jid_cache,
             ) {
                 let chat_jid_str = source.chat.to_string();
-                let is_newsletter = chat_jid_str.contains("@newsletter");
+                let kind = if chat_jid_str.ends_with("@newsletter") {
+                    ChatKind::Newsletter
+                } else if chat_jid_str.ends_with("@g.us") {
+                    ChatKind::Group
+                } else {
+                    ChatKind::Chat
+                };
                 let chat_id = jid_to_chat_id(&source.chat, jid_cache);
 
                 // Determine chat name:
                 // - Groups/newsletters: never use sender's push_name (that's a person, not the group)
                 // - 1:1 incoming: use push_name if available
                 // - Outgoing / fallback: use phone number from JID
-                let chat_name = if source.is_group || is_newsletter {
-                    jid_to_display_name(&source.chat)
-                } else if source.is_from_me {
+                let chat_name = if matches!(kind, ChatKind::Group | ChatKind::Newsletter)
+                    || source.is_from_me
+                {
                     jid_to_display_name(&source.chat)
                 } else if !info.push_name.is_empty() {
                     info.push_name.clone()
@@ -268,9 +293,8 @@ fn handle_wa_event(
                     display_name: None,
                     last_message: Some(preview),
                     unread_count: if unified.is_outgoing { 0 } else { 1 },
-                    is_group: source.is_group,
+                    kind,
                     is_pinned: false,
-                    is_newsletter,
                     is_muted: false,
                 };
 
@@ -315,10 +339,15 @@ fn handle_wa_event(
 
                 if let Ok(jid) = jid_str.parse::<Jid>() {
                     let chat_id = jid_to_chat_id(&jid, jid_cache);
-                    let is_group = jid_str.contains("@g.us");
-                    let is_newsletter = jid_str.contains("@newsletter");
+                    let kind = if jid_str.ends_with("@newsletter") {
+                        ChatKind::Newsletter
+                    } else if jid_str.ends_with("@g.us") {
+                        ChatKind::Group
+                    } else {
+                        ChatKind::Chat
+                    };
 
-                    let name = if is_group {
+                    let name = if matches!(kind, ChatKind::Group) {
                         conv.name
                             .clone()
                             .unwrap_or_else(|| jid_to_display_name(&jid))
@@ -348,9 +377,8 @@ fn handle_wa_event(
                         display_name: None,
                         last_message: last_preview,
                         unread_count: conv.unread_count.unwrap_or(0),
-                        is_group,
+                        kind,
                         is_pinned: false,
-                        is_newsletter,
                         is_muted: false,
                     };
 
