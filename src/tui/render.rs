@@ -192,3 +192,4 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     if let Some(ref auth_state) = state.telegram_auth_state {
         telegram_auth_overlay::render_telegram_auth_overlay(f, auth_state);
     }
+}
