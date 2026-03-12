@@ -1,31 +1,27 @@
-use crate::core::types::{Platform, UnifiedChat};
+use crate::core::types::{ChatKind, Platform, UnifiedChat};
 use crate::core::Result;
 use crate::storage::db::Database;
 
 impl Database {
     pub fn upsert_chat(&self, chat: &UnifiedChat) -> Result<()> {
         let platform_str = format!("{:?}", chat.platform);
-        // Use INSERT ON CONFLICT to preserve user-set display_name
-        // Note: pinned column is intentionally excluded — managed via set_chat_pinned()
         self.conn.execute(
-            "INSERT INTO chats (id, platform, name, last_message, unread_count, is_group, is_newsletter, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
+            "INSERT INTO chats (id, platform, name, last_message, unread_count, kind, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))
              ON CONFLICT(id) DO UPDATE SET
-               platform = excluded.platform,
-               name = excluded.name,
+               platform     = excluded.platform,
+               name         = excluded.name,
                last_message = COALESCE(excluded.last_message, chats.last_message),
                unread_count = excluded.unread_count,
-               is_group = excluded.is_group,
-               is_newsletter = excluded.is_newsletter,
-               updated_at = datetime('now')",
+               kind         = excluded.kind,
+               updated_at   = datetime('now')",
             rusqlite::params![
                 chat.id,
                 platform_str,
                 chat.name,
                 chat.last_message,
                 chat.unread_count,
-                chat.is_group as i32,
-                chat.is_newsletter as i32,
+                chat.kind.as_str(),
             ],
         )?;
         Ok(())
@@ -33,7 +29,8 @@ impl Database {
 
     pub fn get_all_chats(&self) -> Result<Vec<UnifiedChat>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, platform, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter, muted
+            "SELECT id, platform, name, last_message, unread_count, kind,
+                    display_name, pinned, muted
              FROM chats ORDER BY pinned DESC, updated_at DESC",
         )?;
 
@@ -44,38 +41,57 @@ impl Database {
                 let name: String = row.get(2)?;
                 let last_message: Option<String> = row.get(3)?;
                 let unread_count: u32 = row.get(4)?;
-                let is_group: i32 = row.get(5)?;
+                let kind_str: String = row.get(5)?;
                 let display_name: Option<String> = row.get(6)?;
                 let pinned: i32 = row.get(7)?;
-                let is_newsletter: i32 = row.get(8)?;
-                let muted: i32 = row.get(9)?;
-
-                Ok((id, platform_str, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter, muted))
+                let muted: i32 = row.get(8)?;
+                Ok((
+                    id,
+                    platform_str,
+                    name,
+                    last_message,
+                    unread_count,
+                    kind_str,
+                    display_name,
+                    pinned,
+                    muted,
+                ))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
 
         let result = chats
             .into_iter()
-            .map(|(id, platform_str, name, last_message, unread_count, is_group, display_name, pinned, is_newsletter, muted)| {
-                let platform = match platform_str.as_str() {
-                    "WhatsApp" => Platform::WhatsApp,
-                    "Telegram" => Platform::Telegram,
-                    "Slack" => Platform::Slack,
-                    _ => Platform::Mock,
-                };
-                UnifiedChat {
+            .map(
+                |(
                     id,
-                    platform,
+                    platform_str,
                     name,
-                    display_name,
                     last_message,
                     unread_count,
-                    is_group: is_group != 0,
-                    is_pinned: pinned != 0,
-                    is_newsletter: is_newsletter != 0,
-                    is_muted: muted != 0,
-                }
-            })
+                    kind_str,
+                    display_name,
+                    pinned,
+                    muted,
+                )| {
+                    let platform = match platform_str.as_str() {
+                        "WhatsApp" => Platform::WhatsApp,
+                        "Telegram" => Platform::Telegram,
+                        "Slack" => Platform::Slack,
+                        _ => Platform::Mock,
+                    };
+                    UnifiedChat {
+                        id,
+                        platform,
+                        name,
+                        display_name,
+                        last_message,
+                        unread_count,
+                        kind: ChatKind::from_str(&kind_str),
+                        is_pinned: pinned != 0,
+                        is_muted: muted != 0,
+                    }
+                },
+            )
             .collect();
 
         Ok(result)
