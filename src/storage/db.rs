@@ -113,7 +113,8 @@ impl Database {
             );
 
             CREATE INDEX IF NOT EXISTS idx_scheduled_pending
-                ON scheduled_messages(status, send_at);
+                ON scheduled_messages(status, send_at)
+                WHERE status = 'pending';
             ",
         )?;
 
