@@ -33,8 +33,14 @@ pub enum MessageStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageContent {
     Text(String),
-    Image { url: String, caption: Option<String> },
-    File { url: String, filename: String },
+    Image {
+        url: String,
+        caption: Option<String>,
+    },
+    File {
+        url: String,
+        filename: String,
+    },
     System(String),
 }
 
@@ -42,9 +48,7 @@ impl MessageContent {
     pub fn as_text(&self) -> &str {
         match self {
             MessageContent::Text(t) => t,
-            MessageContent::Image { caption, .. } => {
-                caption.as_deref().unwrap_or("[Image]")
-            }
+            MessageContent::Image { caption, .. } => caption.as_deref().unwrap_or("[Image]"),
             MessageContent::File { filename, .. } => filename,
             MessageContent::System(t) => t,
         }
@@ -78,6 +82,21 @@ pub struct UnifiedMessage {
     pub is_outgoing: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChatKind {
+    Chat,       // 1:1 DM with a human
+    Group,      // WA @g.us group or TG Group/Supergroup
+    Channel,    // TG broadcast channel
+    Newsletter, // WA @newsletter
+    Bot,        // TG bot user
+}
+
+impl Default for ChatKind {
+    fn default() -> Self {
+        ChatKind::Chat
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnifiedChat {
     pub id: String,
@@ -86,8 +105,7 @@ pub struct UnifiedChat {
     pub display_name: Option<String>,
     pub last_message: Option<String>,
     pub unread_count: u32,
-    pub is_group: bool,
+    pub kind: ChatKind,
     pub is_pinned: bool,
-    pub is_newsletter: bool,
     pub is_muted: bool,
 }
