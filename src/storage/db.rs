@@ -141,12 +141,9 @@ impl Database {
                 .conn
                 .prepare("PRAGMA table_info(chats)")
                 .expect("PRAGMA table_info failed");
-            let cols: Vec<String> = stmt
-                .query_map([], |row| row.get::<_, String>(1))
+            stmt.query_map([], |row| row.get::<_, String>(1))
                 .expect("query_map failed")
-                .filter_map(|r| r.ok())
-                .collect();
-            cols.iter().any(|s| s == "is_group")
+                .any(|col| col.map(|s| s == "is_group").unwrap_or(false))
         };
 
         if has_is_group {
