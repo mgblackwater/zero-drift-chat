@@ -6,11 +6,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::core::types::UnifiedChat;
+use crate::core::types::{ChatKind, Platform, UnifiedChat};
 use crate::tui::app_state::{ActivePanel, InputMode};
 
 fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
-    let tag = format!("[{}]", chat.platform);
     let unread = if chat.unread_count > 0 {
         format!(" ({})", chat.unread_count)
     } else {
@@ -22,7 +21,7 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
         .unwrap_or(&chat.name)
         .to_string();
     let selector = if is_selected { "▶ " } else { "  " };
-    let pin_tag = if chat.is_pinned { "* " } else { "  " };
+    let pin_tag = if chat.is_pinned { "★ " } else { "  " };
 
     // Muted chats render dimmed
     let (name_color, unread_color) = if chat.is_muted {
@@ -31,20 +30,36 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
         (Color::White, Color::Yellow)
     };
 
-    let mut spans = vec![
+    // Level 1: platform pill
+    let (platform_label, platform_fg, platform_bg) = match chat.platform {
+        Platform::WhatsApp => ("WA", Color::Rgb(63, 185, 80), Color::Rgb(26, 71, 33)),
+        Platform::Telegram => ("TG", Color::Rgb(163, 113, 247), Color::Rgb(30, 21, 53)),
+        Platform::Slack => ("SL", Color::Rgb(224, 148, 0), Color::Rgb(60, 40, 0)),
+        Platform::Mock => ("MK", Color::DarkGray, Color::Black),
+    };
+    let platform_span = Span::styled(
+        format!(" {} ", platform_label),
+        Style::default().fg(platform_fg).bg(platform_bg),
+    );
+
+    // Level 2: type emoji
+    let type_emoji = match chat.kind {
+        ChatKind::Chat => "💬",
+        ChatKind::Group => "👥",
+        ChatKind::Channel => "📢",
+        ChatKind::Newsletter => "📢",
+        ChatKind::Bot => "🤖",
+    };
+    let emoji_span = Span::raw(format!(" {} ", type_emoji));
+
+    let spans = vec![
         Span::raw(selector),
         Span::styled(pin_tag.to_string(), Style::default().fg(Color::Yellow)),
+        platform_span,
+        emoji_span,
+        Span::styled(name, Style::default().fg(name_color)),
+        Span::styled(unread, Style::default().fg(unread_color)),
     ];
-    if chat.is_newsletter {
-        spans.push(Span::styled("[NL]", Style::default().fg(Color::Cyan)));
-    } else if chat.is_group {
-        spans.push(Span::styled("[GP]", Style::default().fg(Color::Magenta)));
-    } else {
-        spans.push(Span::styled(tag, Style::default().fg(Color::DarkGray)));
-    }
-    spans.push(Span::raw(" "));
-    spans.push(Span::styled(name, Style::default().fg(name_color)));
-    spans.push(Span::styled(unread, Style::default().fg(unread_color)));
     ListItem::new(Line::from(spans))
 }
 
@@ -72,7 +87,7 @@ pub fn render_chat_list(
     } else {
         let total_unread: u32 = chats
             .iter()
-            .filter(|c| !c.is_newsletter && !c.is_muted)
+            .filter(|c| !matches!(c.kind, ChatKind::Newsletter | ChatKind::Channel) && !c.is_muted)
             .map(|c| c.unread_count)
             .sum();
         let t = if total_unread > 0 {

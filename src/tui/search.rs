@@ -10,6 +10,7 @@ pub fn fuzzy_score(query: &str, text: &str) -> Option<usize> {
     let query_chars: Vec<char> = query.chars().collect();
     let mut qi = 0;
     let mut first_match: Option<usize> = None;
+    #[allow(unused_assignments)]
     let mut last_match = 0;
     for (ti, tc) in text.chars().enumerate() {
         if tc.eq_ignore_ascii_case(&query_chars[qi]) {
@@ -113,9 +114,8 @@ mod tests {
             platform: crate::core::types::Platform::Mock,
             last_message: None,
             unread_count: 0,
-            is_group: false,
+            kind: crate::core::types::ChatKind::Chat,
             is_pinned: false,
-            is_newsletter: false,
             is_muted: false,
         }
     }

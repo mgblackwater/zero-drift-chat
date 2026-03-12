@@ -35,6 +35,7 @@ pub fn peer_id_to_chat_id(peer_id: i64) -> String {
 
 /// Decode our chat_id string back to a peer id (i64).
 /// Returns None if the format is wrong.
+#[allow(dead_code)]
 pub fn chat_id_to_peer_id(chat_id: &str) -> Option<i64> {
     chat_id.strip_prefix("tg-")?.parse::<i64>().ok()
 }

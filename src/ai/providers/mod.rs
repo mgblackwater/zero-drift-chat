@@ -15,6 +15,7 @@ pub struct ContextMessage {
 }
 
 impl ContextMessage {
+    #[allow(dead_code)]
     pub fn to_chat_line(&self) -> String {
         match self.role {
             MessageRole::User => format!("[You]: {}", self.content),

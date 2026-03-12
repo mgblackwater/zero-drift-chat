@@ -2,6 +2,7 @@ use crate::core::Result;
 use crate::storage::db::Database;
 
 impl Database {
+    #[allow(dead_code)]
     pub fn save_session(&self, provider: &str, data: &str) -> Result<()> {
         self.conn.execute(
             "INSERT OR REPLACE INTO sessions (provider, data, updated_at)
@@ -11,6 +12,7 @@ impl Database {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_session(&self, provider: &str) -> Result<Option<String>> {
         let mut stmt = self
             .conn
@@ -22,6 +24,7 @@ impl Database {
         }
     }
 
+    #[allow(dead_code)]
     pub fn delete_session(&self, provider: &str) -> Result<()> {
         self.conn.execute(
             "DELETE FROM sessions WHERE provider = ?1",

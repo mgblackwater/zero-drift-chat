@@ -74,6 +74,7 @@ pub struct TelegramConfig {
     pub api_hash: String,
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for TelegramConfig {
     fn default() -> Self {
         Self {
@@ -175,6 +176,7 @@ impl Default for AiConfig {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for AppConfig {
     fn default() -> Self {
         Self {

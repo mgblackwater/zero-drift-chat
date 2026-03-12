@@ -5,6 +5,7 @@ use futures::StreamExt;
 use tokio::sync::mpsc;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AppEvent {
     Key(crossterm::event::KeyEvent),
     Paste(String),
@@ -60,15 +61,16 @@ impl EventHandler {
                         }
                     }
                     Some(Ok(event)) = reader.next() => {
+                        #[allow(clippy::collapsible_match)]
                         match event {
-                            Event::Key(key) => {
-                                // Windows fix: only handle Press events to avoid duplicates
-                                if key.kind == KeyEventKind::Press {
-                                    if task_tx.send(AppEvent::Key(key)).is_err() {
-                                        break;
-                                    }
-                                }
+                            // Windows fix: only handle Press events to avoid duplicates
+                            Event::Key(key)
+                                if key.kind == KeyEventKind::Press
+                                    && task_tx.send(AppEvent::Key(key)).is_err() =>
+                            {
+                                break;
                             }
+                            Event::Key(_) => {}
                             Event::Paste(text) => {
                                 if task_tx.send(AppEvent::Paste(text)).is_err() {
                                     break;

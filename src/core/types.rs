@@ -63,6 +63,7 @@ pub enum AuthStatus {
     Failed,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Contact {
     pub id: String,
@@ -82,19 +83,14 @@ pub struct UnifiedMessage {
     pub is_outgoing: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum ChatKind {
-    Chat,       // 1:1 DM with a human
+    #[default]
+    Chat, // 1:1 DM with a human
     Group,      // WA @g.us group or TG Group/Supergroup
     Channel,    // TG broadcast channel
     Newsletter, // WA @newsletter
     Bot,        // TG bot user
-}
-
-impl Default for ChatKind {
-    fn default() -> Self {
-        ChatKind::Chat
-    }
 }
 
 impl ChatKind {

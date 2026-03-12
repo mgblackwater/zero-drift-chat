@@ -66,6 +66,7 @@ pub fn chat_id_to_jid(chat_id: &str) -> Option<Jid> {
 }
 
 /// Convert a WhatsApp message + info into our UnifiedMessage.
+#[allow(clippy::too_many_arguments)]
 pub fn wa_message_to_unified(
     msg: &wa::Message,
     push_name: &str,

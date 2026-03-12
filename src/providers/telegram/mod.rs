@@ -80,6 +80,7 @@ impl PersistentSession {
         Self(Arc::new(RwLock::new(data)))
     }
 
+    #[allow(private_interfaces)]
     pub fn snapshot(&self) -> SessionSnapshot {
         SessionSnapshot::from(&*self.0.read().unwrap())
     }
@@ -271,6 +272,7 @@ impl TelegramProvider {
 
         // Prompt for OTP; retry on invalid code.
         let _ = tx.send(ProviderEvent::AuthOtpPrompt(Platform::Telegram, None));
+        #[allow(unused_assignments)]
         let mut password_token: Option<PasswordToken> = None;
         let mut otp_retries = 0u8;
         loop {

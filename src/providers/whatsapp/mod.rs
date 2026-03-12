@@ -256,9 +256,10 @@ fn handle_wa_event(
                 // - Groups/newsletters: never use sender's push_name (that's a person, not the group)
                 // - 1:1 incoming: use push_name if available
                 // - Outgoing / fallback: use phone number from JID
-                let chat_name = if source.is_group || matches!(kind, ChatKind::Newsletter) {
-                    jid_to_display_name(&source.chat)
-                } else if source.is_from_me {
+                let chat_name = if source.is_group
+                    || matches!(kind, ChatKind::Newsletter)
+                    || source.is_from_me
+                {
                     jid_to_display_name(&source.chat)
                 } else if !info.push_name.is_empty() {
                     info.push_name.clone()

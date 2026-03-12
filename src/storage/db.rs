@@ -14,6 +14,7 @@ impl Database {
         Ok(db)
     }
 
+    #[allow(dead_code)]
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
         let db = Self { conn };
@@ -141,8 +142,11 @@ impl Database {
                 .conn
                 .prepare("PRAGMA table_info(chats)")
                 .expect("PRAGMA table_info failed");
-            stmt.query_map([], |row| row.get::<_, String>(1))
+            let cols: Vec<_> = stmt
+                .query_map([], |row| row.get::<_, String>(1))
                 .expect("query_map failed")
+                .collect();
+            cols.into_iter()
                 .any(|col| col.map(|s| s == "is_group").unwrap_or(false))
         };
 

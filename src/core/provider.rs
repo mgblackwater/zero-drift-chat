@@ -23,6 +23,7 @@ pub enum ProviderEvent {
 }
 
 #[async_trait]
+#[allow(dead_code)]
 pub trait MessagingProvider: Send + Sync {
     async fn start(&mut self, tx: mpsc::UnboundedSender<ProviderEvent>) -> Result<()>;
     async fn stop(&mut self) -> Result<()>;
