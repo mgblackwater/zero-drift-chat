@@ -97,6 +97,28 @@ impl Default for ChatKind {
     }
 }
 
+impl ChatKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ChatKind::Chat => "chat",
+            ChatKind::Group => "group",
+            ChatKind::Channel => "channel",
+            ChatKind::Newsletter => "newsletter",
+            ChatKind::Bot => "bot",
+        }
+    }
+
+    pub fn from_str(s: &str) -> ChatKind {
+        match s {
+            "group" => ChatKind::Group,
+            "channel" => ChatKind::Channel,
+            "newsletter" => ChatKind::Newsletter,
+            "bot" => ChatKind::Bot,
+            _ => ChatKind::Chat, // default / unknown values
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnifiedChat {
     pub id: String,
@@ -108,4 +130,29 @@ pub struct UnifiedChat {
     pub kind: ChatKind,
     pub is_pinned: bool,
     pub is_muted: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_kind_roundtrip() {
+        let variants = [
+            ChatKind::Chat,
+            ChatKind::Group,
+            ChatKind::Channel,
+            ChatKind::Newsletter,
+            ChatKind::Bot,
+        ];
+        for kind in &variants {
+            assert_eq!(ChatKind::from_str(kind.as_str()), *kind);
+        }
+    }
+
+    #[test]
+    fn chat_kind_from_str_unknown_defaults_to_chat() {
+        assert_eq!(ChatKind::from_str("unknown_value"), ChatKind::Chat);
+        assert_eq!(ChatKind::from_str(""), ChatKind::Chat);
+    }
 }
