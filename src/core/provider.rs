@@ -20,6 +20,10 @@ pub enum ProviderEvent {
     AuthPhonePrompt(Platform, Option<String>),
     AuthOtpPrompt(Platform, Option<String>),
     AuthPasswordPrompt(Platform, Option<String>),
+    /// A WhatsApp LID↔PN JID mapping was discovered at runtime.
+    /// `lid` and `pn` are raw JID strings (no `wa-` prefix).
+    /// The app layer should persist this and remove the stale `wa-<lid>` chat entry.
+    LidPnMappingDiscovered { lid: String, pn: String },
 }
 
 #[async_trait]

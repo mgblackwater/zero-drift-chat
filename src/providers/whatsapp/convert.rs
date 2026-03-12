@@ -1,19 +1,36 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use tokio::sync::mpsc;
 use whatsapp_rust::proto_helpers::MessageExt;
 use whatsapp_rust::waproto::whatsapp as wa;
 use whatsapp_rust::Jid;
 
+use crate::core::provider::ProviderEvent;
 use crate::core::types::*;
 
 /// Cache mapping LID JID strings to their PN (phone number) JID equivalents.
 /// WhatsApp uses two JID formats for the same person:
 /// - PN: `559985213786@s.whatsapp.net`
 /// - LID: `39492358562039@lid`
-#[derive(Clone, Default)]
+///
+/// When a new mapping is discovered the cache emits a
+/// `ProviderEvent::LidPnMappingDiscovered` so the app layer can persist it and
+/// remove any stale `@lid` chat entry.
+#[derive(Clone)]
 pub struct JidCache {
     lid_to_pn: Arc<Mutex<HashMap<String, String>>>,
+    /// Optional channel used to notify the app of newly discovered mappings.
+    tx: Option<mpsc::UnboundedSender<ProviderEvent>>,
+}
+
+impl Default for JidCache {
+    fn default() -> Self {
+        Self {
+            lid_to_pn: Arc::new(Mutex::new(HashMap::new())),
+            tx: None,
+        }
+    }
 }
 
 impl JidCache {
@@ -21,22 +38,55 @@ impl JidCache {
         Self::default()
     }
 
+    /// Pre-populate the cache with previously persisted mappings (loaded from DB
+    /// on startup) so that LID JIDs are normalised correctly from the first event.
+    pub fn new_with_mappings(
+        map: HashMap<String, String>,
+        tx: mpsc::UnboundedSender<ProviderEvent>,
+    ) -> Self {
+        Self {
+            lid_to_pn: Arc::new(Mutex::new(map)),
+            tx: Some(tx),
+        }
+    }
+
     /// Record a mapping between two JIDs (auto-detects LID vs PN).
+    /// Emits `LidPnMappingDiscovered` when a genuinely new mapping is added.
     pub fn record_mapping(&self, jid_a: &Jid, jid_b: &Jid) {
         let a = jid_a.to_string();
         let b = jid_b.to_string();
-        let mut map = self.lid_to_pn.lock().unwrap();
         if a.ends_with("@lid") && !b.ends_with("@lid") {
-            map.insert(a, b);
+            self.insert_if_new(a, b);
         } else if b.ends_with("@lid") && !a.ends_with("@lid") {
-            map.insert(b, a);
+            self.insert_if_new(b, a);
         }
     }
 
     /// Record a direct LID→PN string mapping.
+    /// Emits `LidPnMappingDiscovered` when a genuinely new mapping is added.
     pub fn record_lid_to_pn(&self, lid_jid_str: &str, pn_jid_str: &str) {
-        let mut map = self.lid_to_pn.lock().unwrap();
-        map.insert(lid_jid_str.to_string(), pn_jid_str.to_string());
+        self.insert_if_new(lid_jid_str.to_string(), pn_jid_str.to_string());
+    }
+
+    /// Insert lid→pn only if not already present; emit event for new entries.
+    fn insert_if_new(&self, lid: String, pn: String) {
+        let is_new = {
+            let mut map = self.lid_to_pn.lock().unwrap();
+            if map.contains_key(&lid) {
+                false
+            } else {
+                map.insert(lid.clone(), pn.clone());
+                true
+            }
+        };
+        if is_new {
+            if let Some(ref tx) = self.tx {
+                let _ = tx.send(ProviderEvent::LidPnMappingDiscovered {
+                    lid: lid.clone(),
+                    pn: pn.clone(),
+                });
+            }
+        }
     }
 
     /// Resolve a JID string: if it's a LID with a known PN, return the PN string.

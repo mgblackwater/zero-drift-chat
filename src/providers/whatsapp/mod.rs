@@ -22,6 +22,7 @@ pub struct WhatsAppProvider {
     tx: Option<mpsc::UnboundedSender<ProviderEvent>>,
     auth_status: AuthStatus,
     session_db_path: String,
+    initial_lid_mappings: std::collections::HashMap<String, String>,
 }
 
 impl WhatsAppProvider {
@@ -32,6 +33,21 @@ impl WhatsAppProvider {
             tx: None,
             auth_status: AuthStatus::NotAuthenticated,
             session_db_path,
+            initial_lid_mappings: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn new_with_lid_mappings(
+        session_db_path: String,
+        lid_mappings: std::collections::HashMap<String, String>,
+    ) -> Self {
+        Self {
+            client: None,
+            bot_handle: None,
+            tx: None,
+            auth_status: AuthStatus::NotAuthenticated,
+            session_db_path,
+            initial_lid_mappings: lid_mappings,
         }
     }
 }
@@ -56,7 +72,10 @@ impl MessagingProvider for WhatsAppProvider {
         let http_client = UreqHttpClient::new();
 
         let tx_events = tx.clone();
-        let jid_cache = JidCache::new();
+        let jid_cache = JidCache::new_with_mappings(
+            std::mem::take(&mut self.initial_lid_mappings),
+            tx.clone(),
+        );
         let jid_cache_clone = jid_cache.clone();
 
         let mut bot = Bot::builder()

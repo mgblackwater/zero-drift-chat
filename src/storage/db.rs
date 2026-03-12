@@ -179,6 +179,28 @@ impl Database {
                 .expect("chats recreate-table migration failed");
         }
 
+        // Migration: create lid_pn_map table for persisting WhatsApp LID→PN JID mappings.
+        // Without this, every restart loses the mapping and the same person appears twice
+        // (once as wa-<phone>@s.whatsapp.net, once as wa-<lid>@lid).
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS lid_pn_map (
+                lid TEXT PRIMARY KEY,
+                pn  TEXT NOT NULL
+            );",
+        )?;
+
+        // Migration: delete stale @lid chat rows whose LID is now mapped to a PN.
+        // This cleans up duplicates created before the lid_pn_map table existed.
+        let _ = self.conn.execute(
+            "DELETE FROM chats
+             WHERE id LIKE 'wa-%@lid'
+               AND EXISTS (
+                   SELECT 1 FROM lid_pn_map
+                    WHERE 'wa-' || lid = chats.id
+               )",
+            [],
+        );
+
         Ok(())
     }
 }

@@ -119,7 +119,8 @@ impl App {
                 "{}/whatsapp-session.db",
                 self.config.general.data_dir
             );
-            let wa = WhatsAppProvider::new(session_path);
+            let lid_mappings = self.db.load_lid_mappings().unwrap_or_default();
+            let wa = WhatsAppProvider::new_with_lid_mappings(session_path, lid_mappings);
             self.router.register_provider(Box::new(wa));
         }
 
@@ -576,6 +577,23 @@ impl App {
                             error_hint,
                         );
                     }
+                }
+                ProviderEvent::LidPnMappingDiscovered { lid, pn } => {
+                    if let Err(e) = self.db.save_lid_mapping(&lid, &pn) {
+                        tracing::error!("Failed to save LID mapping: {}", e);
+                    }
+                    // Remove stale @lid chat from DB and in-memory state
+                    let lid_chat_id = format!("wa-{}", lid);
+                    if let Err(e) = self.db.delete_lid_chat(&lid_chat_id) {
+                        tracing::error!("Failed to delete stale @lid chat: {}", e);
+                    }
+                    self.state.chats.retain(|c| c.id != lid_chat_id);
+                    tracing::info!(
+                        "LID→PN mapping recorded: {} → {}; removed stale chat {}",
+                        lid,
+                        pn,
+                        lid_chat_id
+                    );
                 }
             }
         }
