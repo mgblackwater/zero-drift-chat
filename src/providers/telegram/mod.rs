@@ -10,7 +10,7 @@ use grammers_client::client::UpdatesConfiguration;
 use grammers_client::peer::Peer;
 use grammers_client::{Client, SenderPool, SignInError};
 use grammers_session::{Session, SessionData};
-use grammers_session::types::{DcOption, PeerId, PeerInfo, UpdateState, UpdatesState};
+use grammers_session::types::{ChannelKind, DcOption, PeerId, PeerInfo, UpdateState, UpdatesState};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
@@ -442,7 +442,13 @@ impl TelegramProvider {
                     m.text().to_string()
                 }
             });
-            let is_group = matches!(peer, Peer::Group(_) | Peer::Channel(_));
+            let kind = match peer {
+                Peer::User(u) if u.is_bot() => ChatKind::Bot,
+                Peer::User(_)               => ChatKind::Chat,
+                Peer::Group(_)              => ChatKind::Group,
+                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup)) => ChatKind::Group,
+                Peer::Channel(_)            => ChatKind::Channel,
+            };
 
             chats.push(UnifiedChat {
                 id: chat_id_str,
@@ -451,9 +457,8 @@ impl TelegramProvider {
                 display_name: None,
                 last_message,
                 unread_count: 0,
-                is_group,
+                kind,
                 is_pinned: false,
-                is_newsletter: false,
                 is_muted: false,
             });
         }
@@ -620,7 +625,13 @@ impl MessagingProvider for TelegramProvider {
                 }
             });
 
-            let is_group = matches!(peer, Peer::Group(_) | Peer::Channel(_));
+            let kind = match peer {
+                Peer::User(u) if u.is_bot() => ChatKind::Bot,
+                Peer::User(_)               => ChatKind::Chat,
+                Peer::Group(_)              => ChatKind::Group,
+                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup)) => ChatKind::Group,
+                Peer::Channel(_)            => ChatKind::Channel,
+            };
 
             chats.push(UnifiedChat {
                 id: chat_id_str,
@@ -629,9 +640,8 @@ impl MessagingProvider for TelegramProvider {
                 display_name: None,
                 last_message,
                 unread_count: 0,
-                is_group,
+                kind,
                 is_pinned: false,
-                is_newsletter: false,
                 is_muted: false,
             });
         }
