@@ -19,12 +19,12 @@ pub fn render_status_bar(
     schedule_status: Option<&str>,
 ) {
     let hints = match mode {
-        InputMode::Normal => "q:Quit | i:Insert | s:Settings | r:Rename | x:Menu | y:Copy last | v:Select msg | Tab:Switch",
+        InputMode::Normal => "q:Quit | i:Insert | s:Settings | r:Rename | x:Menu | y:Copy last | v:Select msg | Ctrl+L:Scheduled | Tab:Switch",
         InputMode::Editing => {
             if enter_sends {
-                "Esc:Normal | Enter:Send | Shift+Enter/Ctrl+J:Newline | Ctrl+S:Send | Ctrl+U:Clear"
+                "Esc:Normal | Enter:Send | Shift+Enter/Ctrl+J:Newline | Ctrl+S:Send | Ctrl+U:Clear | Ctrl+D:Schedule"
             } else {
-                "Esc:Normal | Enter:Newline | Shift+Enter/Ctrl+S:Send | Ctrl+U:Clear"
+                "Esc:Normal | Enter:Newline | Shift+Enter/Ctrl+S:Send | Ctrl+U:Clear | Ctrl+D:Schedule"
             }
         }
         InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
