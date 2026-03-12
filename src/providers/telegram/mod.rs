@@ -446,7 +446,7 @@ impl TelegramProvider {
                 Peer::User(u) if u.is_bot() => ChatKind::Bot,
                 Peer::User(_)               => ChatKind::Chat,
                 Peer::Group(_)              => ChatKind::Group,
-                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup)) => ChatKind::Group,
+                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup | ChannelKind::Gigagroup)) => ChatKind::Group,
                 Peer::Channel(_)            => ChatKind::Channel,
             };
 
@@ -629,7 +629,7 @@ impl MessagingProvider for TelegramProvider {
                 Peer::User(u) if u.is_bot() => ChatKind::Bot,
                 Peer::User(_)               => ChatKind::Chat,
                 Peer::Group(_)              => ChatKind::Group,
-                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup)) => ChatKind::Group,
+                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup | ChannelKind::Gigagroup)) => ChatKind::Group,
                 Peer::Channel(_)            => ChatKind::Channel,
             };
 
