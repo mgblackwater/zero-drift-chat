@@ -499,6 +499,26 @@ impl TelegramProvider {
 
         // 10. Clean up runner.
         runner_handle.abort();
+        match runner_handle.await {
+            Ok(()) => {}
+            Err(e) if e.is_panic() => {
+                // The upstream `grammers` library contains a known panic in its
+                // MTProto update-difference state machine (grammers-session/src/
+                // message_box/mod.rs). Surface it as a structured error rather than
+                // letting it silently kill the task.
+                tracing::error!(
+                    "Telegram MTProto runner panicked (upstream grammers bug): {:?}",
+                    e
+                );
+                return Err(anyhow::anyhow!(
+                    "Telegram MTProto runner panicked (upstream grammers bug): {:?}",
+                    e
+                ));
+            }
+            Err(_cancelled) => {
+                // Task was aborted — expected, not an error.
+            }
+        }
         Ok(())
     }
 }
@@ -525,16 +545,19 @@ impl MessagingProvider for TelegramProvider {
         // Spawn the entire connect+auth+update loop as a background task so that
         // start() returns immediately and the TUI can draw before auth is needed.
         let connect_handle = tokio::spawn(async move {
-            if let Err(e) = Self::connect_and_run(
+            match Self::connect_and_run(
                 api_id, api_hash, session_path, peer_cache, client_slot, auth_rx, tx.clone(),
             )
             .await
             {
-                tracing::error!("Telegram background task failed: {}", e);
-                let _ = tx.send(ProviderEvent::AuthStatusChanged(
-                    Platform::Telegram,
-                    AuthStatus::Failed,
-                ));
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::error!("Telegram background task failed: {}", e);
+                    let _ = tx.send(ProviderEvent::AuthStatusChanged(
+                        Platform::Telegram,
+                        AuthStatus::Failed,
+                    ));
+                }
             }
         });
 
