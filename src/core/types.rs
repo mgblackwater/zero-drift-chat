@@ -82,7 +82,7 @@ pub struct UnifiedMessage {
     pub is_outgoing: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ChatKind {
     Chat,       // 1:1 DM with a human
     Group,      // WA @g.us group or TG Group/Supergroup
