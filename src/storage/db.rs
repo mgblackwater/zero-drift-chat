@@ -67,7 +67,7 @@ impl Database {
             "CREATE TABLE IF NOT EXISTS preferences (
                 key   TEXT PRIMARY KEY,
                 value TEXT NOT NULL
-            );"
+            );",
         )?;
 
         // Migration: add display_name column if not exists
@@ -76,14 +76,16 @@ impl Database {
             .execute("ALTER TABLE chats ADD COLUMN display_name TEXT", []);
 
         // Migration: add pinned column if not exists
-        let _ = self
-            .conn
-            .execute("ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0", []);
+        let _ = self.conn.execute(
+            "ALTER TABLE chats ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
         // Migration: add is_newsletter column if not exists
-        let _ = self
-            .conn
-            .execute("ALTER TABLE chats ADD COLUMN is_newsletter INTEGER NOT NULL DEFAULT 0", []);
+        let _ = self.conn.execute(
+            "ALTER TABLE chats ADD COLUMN is_newsletter INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
 
         // Backfill is_newsletter for chats already in DB whose id contains @newsletter
         let _ = self.conn.execute(
@@ -92,9 +94,29 @@ impl Database {
         );
 
         // Migration: add muted column if not exists
-        let _ = self
-            .conn
-            .execute("ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0", []);
+        let _ = self.conn.execute(
+            "ALTER TABLE chats ADD COLUMN muted INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+
+        // Migration: create scheduled_messages table
+        self.conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS scheduled_messages (
+                id TEXT PRIMARY KEY,
+                chat_id TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                content TEXT NOT NULL,
+                send_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (chat_id) REFERENCES chats(id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_scheduled_pending
+                ON scheduled_messages(status, send_at)
+                WHERE status = 'pending';
+            ",
+        )?;
 
         Ok(())
     }

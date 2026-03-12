@@ -1,8 +1,8 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -120,6 +120,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         state.mock_enabled,
         state.whatsapp_connected,
         state.copy_status.as_deref(),
+        state.schedule_status.as_deref(),
     );
 
     // Render QR code overlay on top if present
@@ -143,6 +144,46 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     if state.input_mode == InputMode::Searching {
         if let Some(ref search) = state.search_state {
             widgets::search_overlay::render_search_overlay(f, chat_list_area, search, &state.chats);
+        }
+    }
+
+    // Render schedule time prompt (replaces input area)
+    if state.input_mode == InputMode::SchedulePrompt {
+        if let Some(ref sp) = state.schedule_prompt_state {
+            let prompt_line = Line::from(vec![
+                Span::styled(
+                    "Schedule for: ",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(format!("{}▌", sp.query), Style::default().fg(Color::White)),
+            ]);
+            let prompt_widget = Paragraph::new(prompt_line).block(
+                Block::default()
+                    .title(" Schedule ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow)),
+            );
+            f.render_widget(Clear, input_area);
+            f.render_widget(prompt_widget, input_area);
+        }
+    }
+
+    // Render scheduled messages overlay
+    if state.input_mode == InputMode::ScheduleList {
+        if let Some(ref sl) = state.schedule_list_state {
+            let chat_names: std::collections::HashMap<String, String> = state
+                .chats
+                .iter()
+                .map(|c| {
+                    (
+                        c.id.clone(),
+                        c.display_name.clone().unwrap_or_else(|| c.name.clone()),
+                    )
+                })
+                .collect();
+            widgets::schedule_overlay::render_schedule_list_overlay(f, sl, &chat_names);
         }
     }
 }

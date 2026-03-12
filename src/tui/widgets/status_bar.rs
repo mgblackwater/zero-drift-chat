@@ -16,14 +16,15 @@ pub fn render_status_bar(
     mock_enabled: bool,
     whatsapp_connected: bool,
     copy_status: Option<&str>,
+    schedule_status: Option<&str>,
 ) {
     let hints = match mode {
-        InputMode::Normal => "q:Quit | i:Insert | s:Settings | r:Rename | x:Menu | y:Copy last | v:Select msg | Tab:Switch",
+        InputMode::Normal => "q:Quit | i:Insert | s:Settings | r:Rename | x:Menu | y:Copy last | v:Select msg | Ctrl+L:Scheduled | Tab:Switch",
         InputMode::Editing => {
             if enter_sends {
-                "Esc:Normal | Enter:Send | Shift+Enter/Ctrl+J:Newline | Ctrl+S:Send | Ctrl+U:Clear"
+                "Esc:Normal | Enter:Send | Shift+Enter/Ctrl+J:Newline | Ctrl+S:Send | Ctrl+U:Clear | Ctrl+D:Schedule"
             } else {
-                "Esc:Normal | Enter:Newline | Shift+Enter/Ctrl+S:Send | Ctrl+U:Clear"
+                "Esc:Normal | Enter:Newline | Shift+Enter/Ctrl+S:Send | Ctrl+U:Clear | Ctrl+D:Schedule"
             }
         }
         InputMode::Settings => "j/k:Navigate | Enter/Space:Toggle | Ctrl+s:Save | Esc:Cancel",
@@ -31,6 +32,8 @@ pub fn render_status_bar(
         InputMode::ChatMenu => "j/k:Navigate | p/Enter:Confirm | Esc:Close",
         InputMode::Searching => "Type to filter | j/k:Navigate | Enter:Open+Insert | Esc:Cancel",
         InputMode::MessageSelect => "j/k:Navigate | y/Enter:Copy | Esc:Cancel",
+        InputMode::SchedulePrompt => "Type time (e.g. 'tomorrow 9am', 'fri 3pm', 'Mar 15 14:30') | Enter:Confirm | Esc:Cancel",
+        InputMode::ScheduleList => "j/k:Navigate | d:Cancel | Esc/q:Close",
     };
 
     // Mode pill: colored badge on the left, rest of bar stays on black
@@ -42,6 +45,8 @@ pub fn render_status_bar(
         InputMode::ChatMenu => (" MENU ", Color::Yellow, Color::Black),
         InputMode::Searching => (" SEARCH ", Color::Cyan, Color::Black),
         InputMode::MessageSelect => (" SELECT ", Color::Blue, Color::White),
+        InputMode::SchedulePrompt => (" SCHEDULE ", Color::Green, Color::Black),
+        InputMode::ScheduleList => (" SCHEDULED ", Color::Green, Color::Black),
     };
 
     let sep = Style::default().fg(Color::DarkGray);
@@ -77,8 +82,18 @@ pub fn render_status_bar(
     spans.push(Span::styled("WA", Style::default().fg(Color::DarkGray)));
     spans.push(Span::styled(" │ ", sep));
 
-    // Show copy feedback if present, otherwise show normal hints
-    if let Some(status) = copy_status {
+    // Show schedule feedback (highest priority), then copy feedback, then normal hints
+    if let Some(sched) = schedule_status {
+        let color = if sched.starts_with("Could not") {
+            Color::Red
+        } else {
+            Color::Green
+        };
+        spans.push(Span::styled(
+            sched,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ));
+    } else if let Some(status) = copy_status {
         spans.push(Span::styled(
             status,
             Style::default()

@@ -23,6 +23,8 @@ pub fn render_input_bar(
         InputMode::ChatMenu => ("MENU", Color::Yellow, Alignment::Left),
         InputMode::Searching => ("SEARCH", Color::Cyan, Alignment::Left),
         InputMode::MessageSelect => ("SELECT", Color::Blue, Alignment::Left),
+        InputMode::SchedulePrompt => ("SCHEDULE", Color::Green, Alignment::Left),
+        InputMode::ScheduleList => ("SCHEDULED", Color::Green, Alignment::Left),
     };
 
     let block = Block::default()

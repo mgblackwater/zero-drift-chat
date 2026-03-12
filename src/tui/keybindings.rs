@@ -43,6 +43,15 @@ pub enum Action {
     MessageSelectNext,  // j/Down — move selection down (newer)
     MessageSelectCopy,  // y — copy selected message and exit
     MessageSelectExit,  // Esc — exit without copying
+    ScheduleMessage,    // Ctrl+D — open schedule prompt
+    ScheduleInput(KeyEvent),
+    ScheduleConfirm,
+    ScheduleCancel,
+    OpenScheduleList, // Ctrl+L — open scheduled messages overlay
+    ScheduleListNext,
+    ScheduleListPrev,
+    ScheduleListDelete,
+    ScheduleListClose,
     None,
 }
 
@@ -55,6 +64,8 @@ pub fn map_key(key: KeyEvent, mode: InputMode, enter_sends: bool) -> Action {
         InputMode::ChatMenu => map_chat_menu_mode(key),
         InputMode::Searching => map_search_mode(key),
         InputMode::MessageSelect => map_message_select_mode(key),
+        InputMode::SchedulePrompt => map_schedule_prompt_mode(key),
+        InputMode::ScheduleList => map_schedule_list_mode(key),
     }
 }
 
@@ -72,6 +83,9 @@ fn map_normal_mode(key: KeyEvent) -> Action {
         KeyCode::Char('/') => Action::OpenSearch,
         KeyCode::Char('y') => Action::CopyLastMessage,
         KeyCode::Char('v') => Action::EnterMessageSelect,
+        KeyCode::Char('l') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Action::OpenScheduleList
+        }
         KeyCode::PageUp => Action::ScrollUp,
         KeyCode::PageDown => Action::ScrollDown,
         _ => Action::None,
@@ -102,6 +116,7 @@ fn map_editing_mode(key: KeyEvent, enter_sends: bool) -> Action {
         (KeyCode::Char('s'), m) if m.contains(KeyModifiers::CONTROL) => Action::SubmitMessage,
         // Ctrl+U always clears
         (KeyCode::Char('u'), m) if m.contains(KeyModifiers::CONTROL) => Action::ClearInput,
+        (KeyCode::Char('d'), m) if m.contains(KeyModifiers::CONTROL) => Action::ScheduleMessage,
         (KeyCode::Tab, _) => Action::AiSuggestAccept,
         (KeyCode::Char(' '), m) if m.contains(KeyModifiers::CONTROL) => Action::AiSuggestRequest,
         // Everything else forwarded to TextArea
@@ -157,6 +172,24 @@ fn map_message_select_mode(key: KeyEvent) -> Action {
         KeyCode::Char('j') | KeyCode::Down => Action::MessageSelectNext,
         KeyCode::Char('y') | KeyCode::Enter => Action::MessageSelectCopy,
         KeyCode::Esc | KeyCode::Char('q') => Action::MessageSelectExit,
+        _ => Action::None,
+    }
+}
+
+fn map_schedule_prompt_mode(key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Esc => Action::ScheduleCancel,
+        KeyCode::Enter => Action::ScheduleConfirm,
+        _ => Action::ScheduleInput(key),
+    }
+}
+
+fn map_schedule_list_mode(key: KeyEvent) -> Action {
+    match key.code {
+        KeyCode::Char('j') | KeyCode::Down => Action::ScheduleListNext,
+        KeyCode::Char('k') | KeyCode::Up => Action::ScheduleListPrev,
+        KeyCode::Char('d') => Action::ScheduleListDelete,
+        KeyCode::Esc | KeyCode::Char('q') => Action::ScheduleListClose,
         _ => Action::None,
     }
 }
