@@ -243,14 +243,20 @@ fn handle_wa_event(
                 jid_cache,
             ) {
                 let chat_jid_str = source.chat.to_string();
-                let is_newsletter = chat_jid_str.contains("@newsletter");
+                let kind = if chat_jid_str.ends_with("@newsletter") {
+                    ChatKind::Newsletter
+                } else if chat_jid_str.ends_with("@g.us") {
+                    ChatKind::Group
+                } else {
+                    ChatKind::Chat
+                };
                 let chat_id = jid_to_chat_id(&source.chat, jid_cache);
 
                 // Determine chat name:
                 // - Groups/newsletters: never use sender's push_name (that's a person, not the group)
                 // - 1:1 incoming: use push_name if available
                 // - Outgoing / fallback: use phone number from JID
-                let chat_name = if source.is_group || is_newsletter {
+                let chat_name = if source.is_group || matches!(kind, ChatKind::Newsletter) {
                     jid_to_display_name(&source.chat)
                 } else if source.is_from_me {
                     jid_to_display_name(&source.chat)
@@ -268,9 +274,8 @@ fn handle_wa_event(
                     display_name: None,
                     last_message: Some(preview),
                     unread_count: if unified.is_outgoing { 0 } else { 1 },
-                    is_group: source.is_group,
+                    kind,
                     is_pinned: false,
-                    is_newsletter,
                     is_muted: false,
                 };
 
@@ -315,10 +320,15 @@ fn handle_wa_event(
 
                 if let Ok(jid) = jid_str.parse::<Jid>() {
                     let chat_id = jid_to_chat_id(&jid, jid_cache);
-                    let is_group = jid_str.contains("@g.us");
-                    let is_newsletter = jid_str.contains("@newsletter");
+                    let kind = if jid_str.ends_with("@newsletter") {
+                        ChatKind::Newsletter
+                    } else if jid_str.ends_with("@g.us") {
+                        ChatKind::Group
+                    } else {
+                        ChatKind::Chat
+                    };
 
-                    let name = if is_group {
+                    let name = if matches!(kind, ChatKind::Group) {
                         conv.name
                             .clone()
                             .unwrap_or_else(|| jid_to_display_name(&jid))
@@ -348,9 +358,8 @@ fn handle_wa_event(
                         display_name: None,
                         last_message: last_preview,
                         unread_count: conv.unread_count.unwrap_or(0),
-                        is_group,
+                        kind,
                         is_pinned: false,
-                        is_newsletter,
                         is_muted: false,
                     };
 
