@@ -74,16 +74,21 @@ impl MockProvider {
         let count = self.chat_count.min(CHAT_NAMES.len());
         (0..count)
             .map(|i| UnifiedChat {
-                id: format!("mock-chat-{}", i),
-                platform: Platform::Mock,
-                name: CHAT_NAMES[i].to_string(),
+                id:           format!("mock-chat-{}", i),
+                platform:     Platform::Mock,
+                name:         CHAT_NAMES[i].to_string(),
                 display_name: None,
                 last_message: None,
                 unread_count: 0,
-                is_group: i == 2, // "Team Standup"
+                kind: if NEWSLETTER_INDICES.contains(&i) {
+                    ChatKind::Newsletter
+                } else if i == 2 {
+                    ChatKind::Group   // "Team Standup"
+                } else {
+                    ChatKind::Chat
+                },
                 is_pinned: false,
-                is_newsletter: NEWSLETTER_INDICES.contains(&i),
-                is_muted: false,
+                is_muted:  false,
             })
             .collect()
     }
