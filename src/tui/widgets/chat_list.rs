@@ -46,8 +46,7 @@ fn make_item(chat: &UnifiedChat, is_selected: bool) -> ListItem<'static> {
     let type_emoji = match chat.kind {
         ChatKind::Chat => "💬",
         ChatKind::Group => "👥",
-        ChatKind::Channel => "📢",
-        ChatKind::Newsletter => "📢",
+        ChatKind::Channel | ChatKind::Newsletter => "📢",
         ChatKind::Bot => "🤖",
     };
     let emoji_span = Span::raw(format!(" {} ", type_emoji));
