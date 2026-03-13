@@ -922,6 +922,9 @@ impl App {
             Action::MessageSelectExit => {
                 self.state.exit_message_select();
             }
+            Action::OpenMedia => {
+                // TODO(Task 6): open media attachment for the selected message
+            }
             // Schedule actions
             Action::ScheduleMessage => {
                 let input = self.state.take_input();
