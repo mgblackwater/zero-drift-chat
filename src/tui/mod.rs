@@ -2,6 +2,7 @@ pub mod app_state;
 pub mod search;
 pub mod event;
 pub mod keybindings;
+pub mod media;
 pub mod osc8;
 pub mod render;
 pub mod time_parse;
