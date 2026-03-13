@@ -246,6 +246,16 @@ fn extract_message_content(msg: &wa::Message) -> Option<MessageContent> {
     let base = msg.get_base_message();
 
     if let Some(ref img) = base.image_message {
+        if let Some(ref url) = img.url {
+            if !url.is_empty() {
+                let caption = img.caption.clone().filter(|s| !s.is_empty());
+                return Some(MessageContent::Image {
+                    url: url.clone(),
+                    caption,
+                });
+            }
+        }
+        // Fallback: no URL available — render as text placeholder
         return Some(MessageContent::Text(
             match img.caption.as_deref().filter(|s| !s.is_empty()) {
                 Some(c) => format!("[Image] {}", c),
@@ -303,4 +313,42 @@ fn extract_message_content(msg: &wa::Message) -> Option<MessageContent> {
 /// Strip the @server suffix from a JID string.
 fn strip_jid_server(jid_str: &str) -> String {
     jid_str.split('@').next().unwrap_or(jid_str).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wa::message::ImageMessage;
+    use whatsapp_rust::waproto::whatsapp as wa;
+
+    /// When image_message has a URL, extract_message_content returns Image variant.
+    #[test]
+    fn test_image_message_with_url_returns_image_content() {
+        let mut msg = wa::Message::default();
+        let mut img = ImageMessage::default();
+        img.url = Some("https://cdn.example.com/img.jpg".to_string());
+        img.caption = Some("A caption".to_string());
+        msg.image_message = Some(Box::new(img));
+        let content = extract_message_content(&msg).unwrap();
+        match content {
+            MessageContent::Image { url, caption } => {
+                assert_eq!(url, "https://cdn.example.com/img.jpg");
+                assert_eq!(caption, Some("A caption".to_string()));
+            }
+            other => panic!("Expected Image, got {:?}", other),
+        }
+    }
+
+    /// When image_message has no URL, fall back to Text("[Image]").
+    #[test]
+    fn test_image_message_no_url_falls_back_to_text() {
+        let mut msg = wa::Message::default();
+        let img = ImageMessage::default(); // url = None
+        msg.image_message = Some(Box::new(img));
+        let content = extract_message_content(&msg).unwrap();
+        match content {
+            MessageContent::Text(t) => assert!(t.contains("[Image]")),
+            other => panic!("Expected Text fallback, got {:?}", other),
+        }
+    }
 }
