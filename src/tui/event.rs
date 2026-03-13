@@ -15,6 +15,7 @@ pub enum AppEvent {
     Quit,
     AiSuggestion(String),
     AiError(String),
+    MediaError(String),
 }
 
 pub struct EventHandler {

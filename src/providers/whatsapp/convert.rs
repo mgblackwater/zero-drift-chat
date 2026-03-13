@@ -246,6 +246,41 @@ fn extract_message_content(msg: &wa::Message) -> Option<MessageContent> {
     let base = msg.get_base_message();
 
     if let Some(ref img) = base.image_message {
+        // Build decryption params when the proto carries the necessary E2EE fields.
+        // WhatsApp E2EE images always have media_key + direct_path + file_enc_sha256.
+        let decrypt_params = match (
+            img.media_key.as_deref(),
+            img.direct_path.as_deref(),
+            img.file_sha256.as_deref(),
+            img.file_enc_sha256.as_deref(),
+            img.file_length,
+        ) {
+            (Some(key), Some(path), Some(sha256), Some(enc_sha256), Some(len))
+                if !key.is_empty() =>
+            {
+                Some(MediaDecryptParams {
+                    media_key: key.to_vec(),
+                    direct_path: path.to_string(),
+                    file_sha256: sha256.to_vec(),
+                    file_enc_sha256: enc_sha256.to_vec(),
+                    file_length: len,
+                    mime_type: img.mimetype.clone(),
+                })
+            }
+            _ => None,
+        };
+
+        if let Some(ref url) = img.url {
+            if !url.is_empty() {
+                let caption = img.caption.clone().filter(|s| !s.is_empty());
+                return Some(MessageContent::Image {
+                    url: url.clone(),
+                    caption,
+                    decrypt_params,
+                });
+            }
+        }
+        // Fallback: no URL available — render as text placeholder
         return Some(MessageContent::Text(
             match img.caption.as_deref().filter(|s| !s.is_empty()) {
                 Some(c) => format!("[Image] {}", c),
@@ -303,4 +338,81 @@ fn extract_message_content(msg: &wa::Message) -> Option<MessageContent> {
 /// Strip the @server suffix from a JID string.
 fn strip_jid_server(jid_str: &str) -> String {
     jid_str.split('@').next().unwrap_or(jid_str).to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wa::message::ImageMessage;
+    use whatsapp_rust::waproto::whatsapp as wa;
+
+    /// When image_message has a URL but no E2EE keys, decrypt_params is None.
+    #[test]
+    fn test_image_message_with_url_no_keys_returns_image_content() {
+        let mut msg = wa::Message::default();
+        let mut img = ImageMessage::default();
+        img.url = Some("https://cdn.example.com/img.jpg".to_string());
+        img.caption = Some("A caption".to_string());
+        msg.image_message = Some(Box::new(img));
+        let content = extract_message_content(&msg).unwrap();
+        match content {
+            MessageContent::Image {
+                url,
+                caption,
+                decrypt_params,
+            } => {
+                assert_eq!(url, "https://cdn.example.com/img.jpg");
+                assert_eq!(caption, Some("A caption".to_string()));
+                assert!(
+                    decrypt_params.is_none(),
+                    "no E2EE keys → decrypt_params should be None"
+                );
+            }
+            other => panic!("Expected Image, got {:?}", other),
+        }
+    }
+
+    /// When image_message has URL + E2EE keys, decrypt_params is populated.
+    #[test]
+    fn test_image_message_with_url_and_keys_returns_decrypt_params() {
+        let mut msg = wa::Message::default();
+        let mut img = ImageMessage::default();
+        img.url = Some("https://mmg.whatsapp.net/enc-blob".to_string());
+        img.media_key = Some(vec![0xAB; 32]);
+        img.direct_path = Some("/v/path/to/media".to_string());
+        img.file_sha256 = Some(vec![0x01; 32]);
+        img.file_enc_sha256 = Some(vec![0x02; 32]);
+        img.file_length = Some(12345);
+        img.mimetype = Some("image/jpeg".to_string());
+        msg.image_message = Some(Box::new(img));
+        let content = extract_message_content(&msg).unwrap();
+        match content {
+            MessageContent::Image {
+                url,
+                decrypt_params,
+                ..
+            } => {
+                assert_eq!(url, "https://mmg.whatsapp.net/enc-blob");
+                let p = decrypt_params.expect("E2EE keys present → decrypt_params should be Some");
+                assert_eq!(p.media_key, vec![0xAB; 32]);
+                assert_eq!(p.direct_path, "/v/path/to/media");
+                assert_eq!(p.file_length, 12345);
+                assert_eq!(p.mime_type, Some("image/jpeg".to_string()));
+            }
+            other => panic!("Expected Image, got {:?}", other),
+        }
+    }
+
+    /// When image_message has no URL, fall back to Text("[Image]").
+    #[test]
+    fn test_image_message_no_url_falls_back_to_text() {
+        let mut msg = wa::Message::default();
+        let img = ImageMessage::default(); // url = None
+        msg.image_message = Some(Box::new(img));
+        let content = extract_message_content(&msg).unwrap();
+        match content {
+            MessageContent::Text(t) => assert!(t.contains("[Image]")),
+            other => panic!("Expected Text fallback, got {:?}", other),
+        }
+    }
 }

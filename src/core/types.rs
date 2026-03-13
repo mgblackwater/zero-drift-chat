@@ -30,12 +30,34 @@ pub enum MessageStatus {
     Failed,
 }
 
+/// Provider-specific parameters needed to download and decrypt E2EE media.
+/// Currently only WhatsApp requires this; other providers serve plaintext CDN URLs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaDecryptParams {
+    /// HKDF-derived AES-256-CBC key material.
+    pub media_key: Vec<u8>,
+    /// CDN path component used to construct the authenticated download URL.
+    pub direct_path: String,
+    /// SHA-256 of the plaintext file (for integrity verification after decryption).
+    pub file_sha256: Vec<u8>,
+    /// SHA-256 of the encrypted blob.
+    pub file_enc_sha256: Vec<u8>,
+    /// Length of the plaintext file in bytes.
+    pub file_length: u64,
+    /// MIME type reported by the provider (e.g. "image/jpeg").
+    pub mime_type: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MessageContent {
     Text(String),
     Image {
         url: String,
         caption: Option<String>,
+        /// Present for E2EE providers (WhatsApp). When `Some`, `open_image` must
+        /// use the provider client to download and decrypt rather than fetching
+        /// the `url` directly (which would yield encrypted ciphertext).
+        decrypt_params: Option<MediaDecryptParams>,
     },
     File {
         url: String,

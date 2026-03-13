@@ -44,6 +44,7 @@ pub struct App {
     db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
     schedule_status_ticks: u8,
     telegram_auth_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::providers::telegram::AuthInput>>,
+    event_tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
 }
 
 impl App {
@@ -69,7 +70,7 @@ impl App {
                 _           => Box::new(OpenAiClient::new(config.ai.base_url.clone(), config.ai.api_key.clone())),
             };
             tracing::info!("AI worker created — autocomplete enabled");
-            Some(AiWorker::new(provider, config.ai.clone(), event_tx))
+            Some(AiWorker::new(provider, config.ai.clone(), event_tx.clone()))
         } else {
             tracing::info!("AI worker NOT created — ai.enabled = false in config");
             None
@@ -93,6 +94,7 @@ impl App {
             db_summary_rx,
             schedule_status_ticks: 0,
             telegram_auth_tx: None,
+            event_tx,
         }
     }
 
@@ -150,6 +152,7 @@ impl App {
 
         // Start all providers
         self.router.start_all().await?;
+        tokio::task::spawn_blocking(crate::tui::media::cleanup_temp_images);
 
         // Track which providers are enabled for status bar
         self.state.mock_enabled = self.config.mock_provider.enabled;
@@ -306,6 +309,10 @@ impl App {
                     tracing::info!(error = %e, "AI autocomplete error");
                     self.state.push_ai_log(format!("[error] ← {}", e));
                     self.state.ai_status = Some(format!("AI: {}", e));
+                }
+                Some(AppEvent::MediaError(e)) => {
+                    tracing::error!(error = %e, "Media open error");
+                    self.state.copy_status = Some(e);
                 }
                 Some(AppEvent::Quit) | None => {
                     break;
@@ -920,6 +927,69 @@ impl App {
                 self.state.exit_message_select();
             }
             Action::MessageSelectExit => {
+                self.state.exit_message_select();
+            }
+            Action::OpenMedia => {
+                if let Some(idx) = self.state.selected_message_idx {
+                    if let Some(msg) = self.state.messages.get(idx) {
+                        match &msg.content {
+                            MessageContent::Image { url, decrypt_params, .. } => {
+                                let url = url.clone();
+                                let platform = msg.platform;
+
+                                if let Some(params) = decrypt_params.clone() {
+                                    // E2EE path: download + decrypt via provider, then open
+                                    if let Some(provider) = self.router.get_provider_mut(platform) {
+                                        match provider.download_media(&params).await {
+                                            Ok(bytes) => {
+                                                let cache_key = params.direct_path.clone();
+                                                let mime = params.mime_type.clone();
+                                                let err_tx = self.event_tx.clone();
+                                                tokio::spawn(async move {
+                                                    if let Err(e) = crate::tui::media::open_image_from_bytes(
+                                                        bytes,
+                                                        &cache_key,
+                                                        mime.as_deref(),
+                                                    )
+                                                    .await
+                                                    {
+                                                        tracing::error!("Failed to open image: {}", e);
+                                                        let _ = err_tx.send(AppEvent::MediaError(
+                                                            format!("Failed to open image: {}", e),
+                                                        ));
+                                                    }
+                                                });
+                                                self.state.copy_status = Some("Opening image...".to_string());
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to download media: {}", e);
+                                                self.state.copy_status = Some(format!("Failed to download image: {}", e));
+                                            }
+                                        }
+                                    } else {
+                                        tracing::error!("No provider found for platform {:?}", platform);
+                                        self.state.copy_status = Some("No provider for this message".to_string());
+                                    }
+                                } else {
+                                    // No decrypt params — the image is E2EE encrypted on the CDN
+                                    // but the decryption keys were not captured when this message
+                                    // was received (e.g. older messages synced from history).
+                                    self.state.copy_status = Some(
+                                        "Image cannot be opened — decryption keys unavailable (message received before key capture was supported)".to_string(),
+                                    );
+                                }
+                            }
+                            MessageContent::Text(t) if t.contains("[Image]") => {
+                                // Old history-sync messages stored as Text("[Image]") before
+                                // image viewing support was added — no download URL available.
+                                self.state.copy_status = Some(
+                                    "Image not available — received before image viewing was supported".to_string(),
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 self.state.exit_message_select();
             }
             // Schedule actions

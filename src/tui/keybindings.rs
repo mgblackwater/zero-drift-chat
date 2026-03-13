@@ -43,6 +43,7 @@ pub enum Action {
     MessageSelectNext,  // j/Down — move selection down (newer)
     MessageSelectCopy,  // y — copy selected message and exit
     MessageSelectExit,  // Esc — exit without copying
+    OpenMedia,          // Enter — open media attachment in viewer
     ScheduleMessage,    // Ctrl+D — open schedule prompt
     ScheduleInput(KeyEvent),
     ScheduleConfirm,
@@ -175,7 +176,8 @@ fn map_message_select_mode(key: KeyEvent) -> Action {
     match key.code {
         KeyCode::Char('k') | KeyCode::Up => Action::MessageSelectPrev,
         KeyCode::Char('j') | KeyCode::Down => Action::MessageSelectNext,
-        KeyCode::Char('y') | KeyCode::Enter => Action::MessageSelectCopy,
+        KeyCode::Char('y') => Action::MessageSelectCopy,
+        KeyCode::Enter => Action::OpenMedia,
         KeyCode::Esc | KeyCode::Char('q') => Action::MessageSelectExit,
         _ => Action::None,
     }
@@ -206,5 +208,33 @@ fn map_telegram_auth_mode(key: KeyEvent) -> Action {
         KeyCode::Backspace => Action::TelegramAuthBackspace,
         KeyCode::Char(c) => Action::TelegramAuthChar(c),
         _ => Action::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn enter_in_message_select_maps_to_open_media() {
+        let action = map_key(key(KeyCode::Enter), InputMode::MessageSelect, true);
+        assert_eq!(action, Action::OpenMedia);
+    }
+
+    #[test]
+    fn y_in_message_select_maps_to_copy() {
+        let action = map_key(key(KeyCode::Char('y')), InputMode::MessageSelect, true);
+        assert_eq!(action, Action::MessageSelectCopy);
+    }
+
+    #[test]
+    fn esc_in_message_select_maps_to_exit() {
+        let action = map_key(key(KeyCode::Esc), InputMode::MessageSelect, true);
+        assert_eq!(action, Action::MessageSelectExit);
     }
 }
