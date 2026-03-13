@@ -971,17 +971,12 @@ impl App {
                                         self.state.copy_status = Some("No provider for this message".to_string());
                                     }
                                 } else {
-                                    // Plaintext CDN path (non-E2EE providers)
-                                    let err_tx = self.event_tx.clone();
-                                    tokio::spawn(async move {
-                                        if let Err(e) = crate::tui::media::open_image(url).await {
-                                            tracing::error!("Failed to open image: {}", e);
-                                            let _ = err_tx.send(AppEvent::MediaError(
-                                                format!("Failed to open image: {}", e),
-                                            ));
-                                        }
-                                    });
-                                    self.state.copy_status = Some("Opening image...".to_string());
+                                    // No decrypt params — the image is E2EE encrypted on the CDN
+                                    // but the decryption keys were not captured when this message
+                                    // was received (e.g. older messages synced from history).
+                                    self.state.copy_status = Some(
+                                        "Image cannot be opened — decryption keys unavailable (message received before key capture was supported)".to_string(),
+                                    );
                                 }
                             }
                             MessageContent::Text(t) if t.contains("[Image]") => {
