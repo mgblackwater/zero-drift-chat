@@ -26,7 +26,7 @@ dirs = "5"
 whatsapp-rust = { git = "https://github.com/jlucaso1/whatsapp-rust", default-features = true }
 qrcode = "0.14"
 tui-textarea = { version = "0.7", features = ["crossterm"] }
-reqwest = { version = "0.12", features = ["json"] }
-tokio-util = { version = "0.7", features = ["rt"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
+tokio-util = { version = "0.7", features = ["rt", "io"] }
 grammers-client = { git = "https://codeberg.org/Lonami/grammers", package = "grammers-client" }
 grammers-session = { git = "https://codeberg.org/Lonami/grammers", package = "grammers-session", default-features = false, features = ["serde"] }
