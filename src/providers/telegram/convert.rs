@@ -41,16 +41,21 @@ pub fn chat_id_to_peer_id(chat_id: &str) -> Option<i64> {
 }
 
 /// Convert a grammers `Message` to `UnifiedMessage`.
-/// Returns `None` if the message has no usable text content (e.g., service messages we skip).
+/// Always returns `Some`; all message types are mapped to a text representation.
 pub fn grammers_message_to_unified(
     msg: &grammers_client::message::Message,
     chat_id: &str,
 ) -> Option<UnifiedMessage> {
-    // Text content — media becomes "[Media]" placeholder (v1)
-    let text = if msg.text().is_empty() {
-        "[Media]".to_string()
+    // Text content — distinguish photo vs other media (v1: no URL download yet)
+    let content = if !msg.text().is_empty() {
+        MessageContent::Text(msg.text().to_string())
+    } else if msg.photo().is_some() {
+        // TODO(show-picture): Telegram photo download requires grammers client.
+        // For now render as [Image] text. A future iteration can add a proper
+        // download path via the grammers client handle.
+        MessageContent::Text("[Image]".to_string())
     } else {
-        msg.text().to_string()
+        MessageContent::Text("[Media]".to_string())
     };
 
     let sender = msg
@@ -64,7 +69,7 @@ pub fn grammers_message_to_unified(
         chat_id: chat_id.to_string(),
         platform: Platform::Telegram,
         sender,
-        content: MessageContent::Text(text),
+        content,
         // msg.date() already returns DateTime<Utc>
         timestamp: msg.date(),
         status: MessageStatus::Sent,
