@@ -150,6 +150,7 @@ impl App {
 
         // Start all providers
         self.router.start_all().await?;
+        tokio::task::spawn_blocking(crate::tui::media::cleanup_temp_images);
 
         // Track which providers are enabled for status bar
         self.state.mock_enabled = self.config.mock_provider.enabled;
@@ -923,7 +924,20 @@ impl App {
                 self.state.exit_message_select();
             }
             Action::OpenMedia => {
-                // TODO(Task 6): open media attachment for the selected message
+                if let Some(idx) = self.state.selected_message_idx {
+                    if let Some(msg) = self.state.messages.get(idx) {
+                        if let MessageContent::Image { url, .. } = &msg.content {
+                            let url = url.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = crate::tui::media::open_image(url).await {
+                                    tracing::error!("Failed to open image: {}", e);
+                                }
+                            });
+                            self.state.copy_status = Some("Opening image...".to_string());
+                        }
+                    }
+                }
+                self.state.exit_message_select();
             }
             // Schedule actions
             Action::ScheduleMessage => {
