@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use futures::TryStreamExt;
+use tokio::io::AsyncWriteExt;
 use tokio_util::io::StreamReader;
 
 /// Generate a deterministic temp file path for a given image URL.
@@ -37,6 +38,8 @@ pub async fn open_image(url: String) -> anyhow::Result<()> {
             let mut reader = StreamReader::new(byte_stream);
             let mut file = tokio::fs::File::create(&tmp_path).await?;
             tokio::io::copy(&mut reader, &mut file).await?;
+            file.flush().await?;
+            drop(file); // close before rename
             tokio::fs::rename(&tmp_path, &path).await?;
             Ok::<_, anyhow::Error>(())
         }.await;
@@ -47,29 +50,46 @@ pub async fn open_image(url: String) -> anyhow::Result<()> {
         }
     }
 
-    spawn_os_opener(&path);
+    spawn_os_opener(&path).await;
     Ok(())
 }
 
-/// Spawn the OS default image viewer for `path`. Fire-and-forget.
-fn spawn_os_opener(path: &std::path::Path) {
-    #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(path).spawn();
+/// Spawn the OS default image viewer for `path` and wait for it to exit.
+/// Uses `spawn_blocking` so the `.wait()` call does not block the async executor.
+/// Waiting prevents zombie processes in the kernel process table.
+async fn spawn_os_opener(path: &std::path::Path) {
+    let path = path.to_path_buf();
+    let result = tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "linux")]
+        let spawn_result = std::process::Command::new("xdg-open").arg(&path).spawn();
 
-    #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(path).spawn();
+        #[cfg(target_os = "macos")]
+        let spawn_result = std::process::Command::new("open").arg(&path).spawn();
 
-    #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("cmd")
-        .args(["/c", "start", "", &path.to_string_lossy()])
-        .spawn();
+        #[cfg(target_os = "windows")]
+        let spawn_result = std::process::Command::new("cmd")
+            .args(["/c", "start", "", &path.to_string_lossy()])
+            .spawn();
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    let result: std::io::Result<std::process::Child> =
-        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "unsupported OS"));
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        let spawn_result: std::io::Result<std::process::Child> =
+            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "unsupported OS"));
+
+        match spawn_result {
+            Ok(mut child) => {
+                // Wait for the opener process to exit so it doesn't become a zombie.
+                // xdg-open / open fork and exit quickly; wait() returns in milliseconds.
+                let _ = child.wait();
+            }
+            Err(e) => {
+                tracing::error!("Failed to spawn OS opener for {:?}: {}", path, e);
+            }
+        }
+    })
+    .await;
 
     if let Err(e) = result {
-        tracing::error!("Failed to spawn OS opener for {:?}: {}", path, e);
+        tracing::error!("spawn_os_opener task panicked: {}", e);
     }
 }
 
