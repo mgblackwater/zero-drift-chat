@@ -10,7 +10,7 @@ use whatsapp_rust::bot::Bot;
 use whatsapp_rust::store::SqliteStore;
 use whatsapp_rust::transport::{TokioWebSocketTransportFactory, UreqHttpClient};
 
-use crate::core::provider::{MessagingProvider, ProviderEvent};
+use crate::core::provider::{MediaBytes, MessagingProvider, ProviderEvent};
 use crate::core::types::*;
 use crate::core::Result;
 
@@ -181,6 +181,29 @@ impl MessagingProvider for WhatsAppProvider {
             .map_err(|e| anyhow::anyhow!("Failed to send read receipt: {}", e))?;
 
         Ok(())
+    }
+
+    async fn download_media(&self, params: &MediaDecryptParams) -> Result<MediaBytes> {
+        use whatsapp_rust::download::MediaType;
+
+        let client = self
+            .client
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("WhatsApp client not connected"))?;
+
+        let bytes = client
+            .download_from_params(
+                &params.direct_path,
+                &params.media_key,
+                &params.file_sha256,
+                &params.file_enc_sha256,
+                params.file_length,
+                MediaType::Image,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("WhatsApp media download failed: {}", e))?;
+
+        Ok(bytes)
     }
 
     async fn get_chats(&self) -> Result<Vec<UnifiedChat>> {

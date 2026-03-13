@@ -17,6 +17,13 @@
 - Chat rename — press `r` to set custom display names (persisted across restarts)
 - Version displayed in status bar
 
+## View Images
+- Press `v` to enter **Message Select mode**, navigate to an `[Image]` message, and press `Enter` to open it
+- Images are downloaded and **end-to-end decrypted** using the WhatsApp media key — no plaintext leakage
+- Opens in your OS default image viewer (xdg-open on Linux, open on macOS)
+- Falls back to a direct CDN fetch for images that lack E2EE metadata
+- Temporary files are stored in `/tmp/` and cleaned up on next startup
+
 ## Copy to Clipboard
 - Press `y` to copy the last message in the current chat to the clipboard
 - Press `v` to enter **Message Select mode**: navigate with `j`/`k`, copy with `y` or `Enter`, cancel with `Esc`

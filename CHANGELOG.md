@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.3.3 — 2026-03-13
+
+### View images in your terminal chat
+
+WhatsApp image messages can now be opened directly from the TUI.
+
+- In **Message Select mode** (`v`), navigate to any `[Image]` message and press `Enter` (or `v` again)
+- The image is downloaded, decrypted end-to-end using the WhatsApp media key, and opened in your OS default image viewer
+- A **"Opening image..."** flash appears in the status bar while the download is in progress
+- Images without E2EE metadata (e.g. some history-sync thumbnails) fall back to a direct CDN fetch
+- Temporary files are written to `/tmp/` and cleaned up automatically on the next startup
+- A brief **"Failed to open image: …"** error is shown in the status bar if the download or viewer launch fails
+
+#### New internal pieces
+- `MediaDecryptParams` struct carries the `media_key`, `direct_path`, `file_sha256`, `file_enc_sha256`, `file_length`, and `mime_type` fields extracted from the WhatsApp image proto
+- `Provider::download_media()` trait method — `WhatsAppProvider` implements it via `download_from_params` (AES-256-CBC + HMAC, handled by the `whatsapp_rust` library)
+- `open_image_from_bytes()` in `tui/media.rs` writes bytes to a temp file with the correct extension (from MIME type or URL) and hands it to the OS viewer
+
 ## v0.3.2 — 2026-03-11
 
 ### Copy messages to clipboard
