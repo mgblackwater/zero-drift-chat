@@ -932,56 +932,66 @@ impl App {
             Action::OpenMedia => {
                 if let Some(idx) = self.state.selected_message_idx {
                     if let Some(msg) = self.state.messages.get(idx) {
-                        if let MessageContent::Image { url, decrypt_params, .. } = &msg.content {
-                            let url = url.clone();
-                            let platform = msg.platform;
+                        match &msg.content {
+                            MessageContent::Image { url, decrypt_params, .. } => {
+                                let url = url.clone();
+                                let platform = msg.platform;
 
-                            if let Some(params) = decrypt_params.clone() {
-                                // E2EE path: download + decrypt via provider, then open
-                                if let Some(provider) = self.router.get_provider_mut(platform) {
-                                    match provider.download_media(&params).await {
-                                        Ok(bytes) => {
-                                            let cache_key = params.direct_path.clone();
-                                            let mime = params.mime_type.clone();
-                                            let err_tx = self.event_tx.clone();
-                                            tokio::spawn(async move {
-                                                if let Err(e) = crate::tui::media::open_image_from_bytes(
-                                                    bytes,
-                                                    &cache_key,
-                                                    mime.as_deref(),
-                                                )
-                                                .await
-                                                {
-                                                    tracing::error!("Failed to open image: {}", e);
-                                                    let _ = err_tx.send(AppEvent::MediaError(
-                                                        format!("Failed to open image: {}", e),
-                                                    ));
-                                                }
-                                            });
-                                            self.state.copy_status = Some("Opening image...".to_string());
+                                if let Some(params) = decrypt_params.clone() {
+                                    // E2EE path: download + decrypt via provider, then open
+                                    if let Some(provider) = self.router.get_provider_mut(platform) {
+                                        match provider.download_media(&params).await {
+                                            Ok(bytes) => {
+                                                let cache_key = params.direct_path.clone();
+                                                let mime = params.mime_type.clone();
+                                                let err_tx = self.event_tx.clone();
+                                                tokio::spawn(async move {
+                                                    if let Err(e) = crate::tui::media::open_image_from_bytes(
+                                                        bytes,
+                                                        &cache_key,
+                                                        mime.as_deref(),
+                                                    )
+                                                    .await
+                                                    {
+                                                        tracing::error!("Failed to open image: {}", e);
+                                                        let _ = err_tx.send(AppEvent::MediaError(
+                                                            format!("Failed to open image: {}", e),
+                                                        ));
+                                                    }
+                                                });
+                                                self.state.copy_status = Some("Opening image...".to_string());
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("Failed to download media: {}", e);
+                                                self.state.copy_status = Some(format!("Failed to download image: {}", e));
+                                            }
                                         }
-                                        Err(e) => {
-                                            tracing::error!("Failed to download media: {}", e);
-                                            self.state.copy_status = Some(format!("Failed to download image: {}", e));
-                                        }
+                                    } else {
+                                        tracing::error!("No provider found for platform {:?}", platform);
+                                        self.state.copy_status = Some("No provider for this message".to_string());
                                     }
                                 } else {
-                                    tracing::error!("No provider found for platform {:?}", platform);
-                                    self.state.copy_status = Some("No provider for this message".to_string());
+                                    // Plaintext CDN path (non-E2EE providers)
+                                    let err_tx = self.event_tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = crate::tui::media::open_image(url).await {
+                                            tracing::error!("Failed to open image: {}", e);
+                                            let _ = err_tx.send(AppEvent::MediaError(
+                                                format!("Failed to open image: {}", e),
+                                            ));
+                                        }
+                                    });
+                                    self.state.copy_status = Some("Opening image...".to_string());
                                 }
-                            } else {
-                                // Plaintext CDN path (non-E2EE providers)
-                                let err_tx = self.event_tx.clone();
-                                tokio::spawn(async move {
-                                    if let Err(e) = crate::tui::media::open_image(url).await {
-                                        tracing::error!("Failed to open image: {}", e);
-                                        let _ = err_tx.send(AppEvent::MediaError(
-                                            format!("Failed to open image: {}", e),
-                                        ));
-                                    }
-                                });
-                                self.state.copy_status = Some("Opening image...".to_string());
                             }
+                            MessageContent::Text(t) if t.contains("[Image]") => {
+                                // Old history-sync messages stored as Text("[Image]") before
+                                // image viewing support was added — no download URL available.
+                                self.state.copy_status = Some(
+                                    "Image not available — received before image viewing was supported".to_string(),
+                                );
+                            }
+                            _ => {}
                         }
                     }
                 }
