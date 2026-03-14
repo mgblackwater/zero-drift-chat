@@ -490,6 +490,13 @@ impl TelegramProvider {
 
                         let fallback = chat_name_cache.get(&chat_id);
                         if let Some(unified) = grammers_message_to_unified(&msg, &chat_id, fallback.as_deref()) {
+                            tracing::debug!(
+                                chat_id = %chat_id,
+                                msg_id = %msg.id(),
+                                sender = %unified.sender,
+                                raw_text = %msg.text(),
+                                "telegram raw message (live update)"
+                            );
                             let _ = tx.send(ProviderEvent::NewMessage(unified));
                         }
                     }
@@ -701,6 +708,13 @@ impl MessagingProvider for TelegramProvider {
             .map_err(|e| anyhow::anyhow!("iter_messages error: {}", e))?
         {
             if let Some(unified) = grammers_message_to_unified(&msg, chat_id, fallback.as_deref()) {
+                tracing::debug!(
+                    chat_id = %chat_id,
+                    msg_id = %msg.id(),
+                    sender = %unified.sender,
+                    raw_text = %msg.text(),
+                    "telegram raw message (history)"
+                );
                 messages.push(unified);
             }
         }
