@@ -16,7 +16,7 @@ use crate::storage::{AddressBook, Database};
 use crate::tui::event::EventHandler;
 
 #[derive(Parser, Debug)]
-#[command(name = "zero-drift-chat", about = "Unified messaging TUI", version)]
+#[command(name = "zero-drift-chat", version, about = "Zero-drift chat — a privacy-first terminal messenger")]
 struct Cli {
     /// Path to config file
     #[arg(short, long)]
