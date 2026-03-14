@@ -366,6 +366,7 @@ impl TelegramProvider {
         api_hash: String,
         session_path: PathBuf,
         peer_cache: PeerCache,
+        chat_name_cache: ChatNameCache,
         client_slot: Arc<TokioMutex<Option<Client>>>,
         mut auth_rx: mpsc::UnboundedReceiver<AuthInput>,
         tx: mpsc::UnboundedSender<ProviderEvent>,
@@ -439,6 +440,7 @@ impl TelegramProvider {
             peer_cache.insert(&chat_id_str, peer_ref);
 
             let name = peer.name().unwrap_or("Unknown").to_string();
+            chat_name_cache.insert(&chat_id_str, &name);
             let last_message = dialog.last_message.as_ref().map(|m| {
                 if m.text().is_empty() {
                     "[Media]".to_string()
@@ -486,7 +488,8 @@ impl TelegramProvider {
                             .map(peer_id_to_chat_id)
                             .unwrap_or_else(|| "tg-unknown".to_string());
 
-                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id, None) {
+                        let fallback = chat_name_cache.get(&chat_id);
+                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id, fallback.as_deref()) {
                             let _ = tx.send(ProviderEvent::NewMessage(unified));
                         }
                     }
@@ -538,6 +541,7 @@ impl MessagingProvider for TelegramProvider {
         let api_hash = self.api_hash.clone();
         let session_path = self.session_path.clone();
         let peer_cache = self.peer_cache.clone();
+        let chat_name_cache = self.chat_name_cache.clone();
         let client_slot = Arc::clone(&self.client);
         let auth_rx = self
             .auth_rx
@@ -548,7 +552,7 @@ impl MessagingProvider for TelegramProvider {
         // start() returns immediately and the TUI can draw before auth is needed.
         let connect_handle = tokio::spawn(async move {
             match Self::connect_and_run(
-                api_id, api_hash, session_path, peer_cache, client_slot, auth_rx, tx.clone(),
+                api_id, api_hash, session_path, peer_cache, chat_name_cache, client_slot, auth_rx, tx.clone(),
             )
             .await
             {
