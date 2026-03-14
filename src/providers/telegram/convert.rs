@@ -28,6 +28,27 @@ impl PeerCache {
     }
 }
 
+/// Maps our `tg-{peer_id}` chat IDs to display names.
+/// Populated during `get_chats()`; used as fallback in message conversion.
+#[derive(Clone, Default)]
+pub struct ChatNameCache {
+    inner: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl ChatNameCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&self, chat_id: &str, name: &str) {
+        self.inner.lock().unwrap().insert(chat_id.to_string(), name.to_string());
+    }
+
+    pub fn get(&self, chat_id: &str) -> Option<String> {
+        self.inner.lock().unwrap().get(chat_id).cloned()
+    }
+}
+
 /// Encode a Telegram peer id (i64) to our chat_id string format.
 pub fn peer_id_to_chat_id(peer_id: i64) -> String {
     format!("tg-{}", peer_id)
@@ -42,9 +63,11 @@ pub fn chat_id_to_peer_id(chat_id: &str) -> Option<i64> {
 
 /// Convert a grammers `Message` to `UnifiedMessage`.
 /// Always returns `Some`; all message types are mapped to a text representation.
+/// `fallback_name` is used when `msg.sender()` returns `None` (common for channel messages).
 pub fn grammers_message_to_unified(
     msg: &grammers_client::message::Message,
     chat_id: &str,
+    fallback_name: Option<&str>,
 ) -> Option<UnifiedMessage> {
     // Text content — distinguish photo vs other media (v1: no URL download yet)
     let content = if !msg.text().is_empty() {
@@ -62,6 +85,7 @@ pub fn grammers_message_to_unified(
         .sender()
         .and_then(|s| s.name())
         .map(|n| n.to_string())
+        .or_else(|| fallback_name.map(|n| n.to_string()))
         .unwrap_or_else(|| "Unknown".to_string());
 
     Some(UnifiedMessage {
