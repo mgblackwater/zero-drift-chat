@@ -16,6 +16,7 @@ fn url_hash(url: &str) -> u64 {
 
 /// Derive a file extension from a URL path component.
 /// Returns `None` when the URL has no path extension or an unrecognised one.
+#[allow(dead_code)]
 fn ext_from_url(url: &str) -> Option<&'static str> {
     // Strip query/fragment before inspecting the path
     let path_part = url.split('?').next().unwrap_or(url);
@@ -110,6 +111,7 @@ pub async fn open_image_from_bytes(
 /// Image bytes flow: network → kernel buffer → disk.
 /// The Rust heap holds only the ~8 KB read buffer inside `tokio::io::copy` —
 /// never the full image.
+#[allow(dead_code)]
 pub async fn open_image(url: String) -> anyhow::Result<()> {
     // Try to determine the extension from the URL before making a request.
     // If successful we can check the cache immediately; otherwise we must

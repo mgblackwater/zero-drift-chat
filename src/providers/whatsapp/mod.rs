@@ -26,6 +26,7 @@ pub struct WhatsAppProvider {
 }
 
 impl WhatsAppProvider {
+    #[allow(dead_code)]
     pub fn new(session_db_path: String) -> Self {
         Self {
             client: None,
