@@ -19,7 +19,7 @@ use crate::core::error::Result;
 use crate::core::provider::{MessagingProvider, ProviderEvent};
 use crate::core::types::*;
 
-use convert::{grammers_message_to_unified, peer_id_to_chat_id, PeerCache};
+use convert::{grammers_message_to_unified, peer_id_to_chat_id, PeerCache, ChatNameCache};
 
 use grammers_client::client::PasswordToken;
 
@@ -218,6 +218,7 @@ pub struct TelegramProvider {
     /// Shared client handle — set by the background task once connected.
     client: Arc<TokioMutex<Option<Client>>>,
     peer_cache: PeerCache,
+    chat_name_cache: ChatNameCache,
     auth_status: AuthStatus,
 
     /// Channel the app uses to push auth answers back into the running start() future.
@@ -237,6 +238,7 @@ impl TelegramProvider {
             session_path: PathBuf::from(session_path),
             client: Arc::new(TokioMutex::new(None)),
             peer_cache: PeerCache::new(),
+            chat_name_cache: ChatNameCache::new(),
             auth_status: AuthStatus::NotAuthenticated,
             auth_tx,
             auth_rx: Some(auth_rx),
@@ -484,7 +486,7 @@ impl TelegramProvider {
                             .map(peer_id_to_chat_id)
                             .unwrap_or_else(|| "tg-unknown".to_string());
 
-                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id) {
+                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id, None) {
                             let _ = tx.send(ProviderEvent::NewMessage(unified));
                         }
                     }
@@ -641,6 +643,7 @@ impl MessagingProvider for TelegramProvider {
             self.peer_cache.insert(&chat_id_str, peer_ref);
 
             let name = peer.name().unwrap_or("Unknown").to_string();
+            self.chat_name_cache.insert(&chat_id_str, &name);
 
             let last_message = dialog.last_message.as_ref().map(|m| {
                 if m.text().is_empty() {
@@ -686,13 +689,14 @@ impl MessagingProvider for TelegramProvider {
 
         let mut iter = client.iter_messages(peer).limit(50);
         let mut messages = Vec::new();
+        let fallback = self.chat_name_cache.get(chat_id);
 
         while let Some(msg) = iter
             .next()
             .await
             .map_err(|e| anyhow::anyhow!("iter_messages error: {}", e))?
         {
-            if let Some(unified) = grammers_message_to_unified(&msg, chat_id) {
+            if let Some(unified) = grammers_message_to_unified(&msg, chat_id, fallback.as_deref()) {
                 messages.push(unified);
             }
         }
