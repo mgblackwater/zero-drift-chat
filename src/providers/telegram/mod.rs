@@ -488,13 +488,35 @@ impl TelegramProvider {
                             .map(peer_id_to_chat_id)
                             .unwrap_or_else(|| "tg-unknown".to_string());
 
+                        // Re-fetch the message by ID to get the full text.
+                        // MTProto UpdateNewMessage payloads for bot/channel messages are
+                        // often truncated; the full content requires a GetMessages API call.
+                        let full_msg: Option<grammers_client::message::Message> =
+                            if let Some(peer_ref) = peer_cache.get(&chat_id) {
+                                match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
+                                    Ok(mut msgs) => msgs.pop().flatten(),
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "get_messages_by_id failed for msg {}: {}; using update payload",
+                                            msg.id(), e
+                                        );
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+
+                        let effective_msg: &grammers_client::message::Message =
+                            full_msg.as_ref().unwrap_or(&msg);
+
                         let fallback = chat_name_cache.get(&chat_id);
-                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id, fallback.as_deref()) {
+                        if let Some(unified) = grammers_message_to_unified(effective_msg, &chat_id, fallback.as_deref()) {
                             tracing::debug!(
                                 chat_id = %chat_id,
-                                msg_id = %msg.id(),
+                                msg_id = %effective_msg.id(),
                                 sender = %unified.sender,
-                                raw_text = %msg.text(),
+                                raw_text = %effective_msg.text(),
                                 "telegram raw message (live update)"
                             );
                             let _ = tx.send(ProviderEvent::NewMessage(unified));
