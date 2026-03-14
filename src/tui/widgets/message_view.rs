@@ -10,6 +10,69 @@ use ratatui::{
 use crate::core::types::UnifiedMessage;
 use crate::tui::app_state::ActivePanel;
 
+/// Word-wrap `text` so each output line is at most `max_w` columns wide.
+/// Breaks on word boundaries; splits mid-word only when a single word
+/// exceeds `max_w`. Always returns at least one element (empty string for
+/// empty input so callers can rely on a non-empty vec).
+fn wrap_to_width(text: &str, max_w: usize) -> Vec<String> {
+    if max_w == 0 {
+        return vec![text.to_string()];
+    }
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+    let mut lines: Vec<String> = Vec::new();
+    for original_line in text.split('\n') {
+        if original_line.is_empty() {
+            lines.push(String::new());
+            continue;
+        }
+        let mut current = String::new();
+        for word in original_line.split_whitespace() {
+            // Handle words longer than max_w: chop them
+            let mut word_remaining = word;
+            while !word_remaining.is_empty() {
+                let space_needed = if current.is_empty() { 0 } else { 1 };
+                let available = max_w.saturating_sub(current.len() + space_needed);
+                if available == 0 {
+                    // Flush current line
+                    lines.push(current.clone());
+                    current.clear();
+                    continue;
+                }
+                if word_remaining.len() <= available {
+                    if !current.is_empty() {
+                        current.push(' ');
+                    }
+                    current.push_str(word_remaining);
+                    word_remaining = "";
+                } else {
+                    // Check if word fits on a fresh line
+                    if current.is_empty() {
+                        // Force chop
+                        let (chunk, rest) = word_remaining.split_at(available.min(word_remaining.len()));
+                        current.push_str(chunk);
+                        lines.push(current.clone());
+                        current.clear();
+                        word_remaining = rest;
+                    } else {
+                        // Flush and retry on fresh line
+                        lines.push(current.clone());
+                        current.clear();
+                    }
+                }
+            }
+        }
+        if !current.is_empty() || lines.last().map(|l: &String| !l.is_empty()).unwrap_or(true) {
+            lines.push(current);
+        }
+    }
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    lines
+}
+
 /// Split a line of text into alternating (segment, is_url) pairs.
 /// URLs are contiguous non-whitespace text starting with "http://" or "https://".
 fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
@@ -180,7 +243,12 @@ pub fn render_message_view(
             .fg(Color::LightBlue)
             .add_modifier(Modifier::UNDERLINED);
 
-        for text_line in msg.content.as_text().split('\n') {
+        let content_width = area.width.saturating_sub(2) as usize;
+        let bubble_max_w = (content_width * 70 / 100).max(20);
+
+        for original_line in msg.content.as_text().split('\n') {
+        for text_line in wrap_to_width(original_line, bubble_max_w) {
+        let text_line = &text_line;
             let line = if !text_line.contains("http://") && !text_line.contains("https://") {
                 if is_selected && !msg.is_outgoing {
                     Line::from(vec![
@@ -249,7 +317,8 @@ pub fn render_message_view(
             } else {
                 lines.push(line);
             }
-        }
+        } // end wrap_to_width loop
+        } // end original_line loop
         lines.push(Line::from("")); // spacing
     }
 
@@ -264,6 +333,7 @@ pub fn render_message_view(
     // rely on the 4 blank padding lines above to absorb any remaining error.
     let visible_height = area.height.saturating_sub(2) as usize; // subtract borders
     let content_width = area.width.saturating_sub(2) as usize; // subtract borders
+    let bubble_max_w = (content_width * 70 / 100).max(20);
     let total_lines: usize = lines
         .iter()
         .map(|line| {
@@ -275,7 +345,8 @@ pub fn render_message_view(
                 1
             } else {
                 // ceiling division: how many rows does this line occupy after wrapping?
-                line_width.div_ceil(content_width)
+                // Use bubble_max_w since message lines are pre-wrapped to that width.
+                line_width.div_ceil(bubble_max_w)
             }
         })
         .sum();
@@ -303,7 +374,7 @@ pub fn render_message_view(
 
 #[cfg(test)]
 mod tests {
-    use super::split_line_with_urls;
+    use super::{split_line_with_urls, wrap_to_width};
 
     #[test]
     fn plain_text_no_url() {
@@ -379,5 +450,45 @@ mod tests {
             split_line_with_urls("https://a.com"),
             vec![("https://a.com", true)]
         );
+    }
+
+    // wrap_to_width tests
+    #[test]
+    fn wrap_empty_string() {
+        assert_eq!(wrap_to_width("", 10), vec![""]);
+    }
+
+    #[test]
+    fn wrap_short_text_no_wrap() {
+        assert_eq!(wrap_to_width("hello", 10), vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_exact_fit() {
+        assert_eq!(wrap_to_width("hello", 5), vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_two_words_on_separate_lines() {
+        assert_eq!(wrap_to_width("hello world", 7), vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn wrap_long_word_forced_break() {
+        // "abcdefghij" is 10 chars, max_w=6: "abcdef" + "ghij"
+        assert_eq!(wrap_to_width("abcdefghij", 6), vec!["abcdef", "ghij"]);
+    }
+
+    #[test]
+    fn wrap_multiline_input() {
+        let result = wrap_to_width("line one\nline two", 20);
+        assert_eq!(result, vec!["line one", "line two"]);
+    }
+
+    #[test]
+    fn wrap_multiple_words_wrap_correctly() {
+        let result = wrap_to_width("one two three four", 9);
+        // "one two" = 7, "three" = 5 (fits alone), "four" = 4
+        assert_eq!(result, vec!["one two", "three", "four"]);
     }
 }
