@@ -1,5 +1,7 @@
 # zero-drift-chat
 
+[![Build](https://github.com/mgblackwater/zero-drift-chat/actions/workflows/release.yml/badge.svg)](https://github.com/mgblackwater/zero-drift-chat/actions/workflows/release.yml)
+
 A unified messaging TUI built in Rust. Aggregates multiple chat platforms into a single terminal interface.
 
 Currently supports **WhatsApp** via [whatsapp-rust](https://github.com/jlucaso1/whatsapp-rust) (WhatsApp Web multi-device protocol).
