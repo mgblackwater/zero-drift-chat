@@ -15,6 +15,7 @@ pub struct PeerCache {
 }
 
 impl PeerCache {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
@@ -36,6 +37,7 @@ pub struct ChatNameCache {
 }
 
 impl ChatNameCache {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }

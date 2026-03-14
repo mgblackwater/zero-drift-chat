@@ -34,6 +34,7 @@ impl Default for JidCache {
 }
 
 impl JidCache {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }

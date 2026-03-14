@@ -935,6 +935,7 @@ impl App {
                         match &msg.content {
                             MessageContent::Image { url, decrypt_params, .. } => {
                                 let url = url.clone();
+                                let _url = &url; // reserved for non-E2EE CDN path
                                 let platform = msg.platform;
 
                                 if let Some(params) = decrypt_params.clone() {
