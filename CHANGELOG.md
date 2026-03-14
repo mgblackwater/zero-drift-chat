@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `--help` flag shows app description via clap (feat/T004-module-a)
+- `SECURITY.md` vulnerability reporting policy (feat/T004-module-b)
+
 ## [0.3.4] - 2026-03-14
 
 ### Fixed
