@@ -481,48 +481,56 @@ impl TelegramProvider {
         loop {
             match update_stream.next().await {
                 Ok(update) => {
-                    if let grammers_client::update::Update::NewMessage(msg) = update {
-                        let chat_id = msg
-                            .peer_id()
-                            .bot_api_dialog_id()
-                            .map(peer_id_to_chat_id)
-                            .unwrap_or_else(|| "tg-unknown".to_string());
+                    let (msg, is_edit) = match update {
+                        grammers_client::update::Update::NewMessage(m) => (m, false),
+                        grammers_client::update::Update::MessageEdited(m) => (m, true),
+                        _ => continue,
+                    };
 
-                        // Re-fetch the message by ID to get the full text.
-                        // MTProto UpdateNewMessage payloads for bot/channel messages are
-                        // often truncated; the full content requires a GetMessages API call.
-                        let full_msg: Option<grammers_client::message::Message> =
-                            if let Some(peer_ref) = peer_cache.get(&chat_id) {
-                                match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
-                                    Ok(mut msgs) => msgs.pop().flatten(),
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "get_messages_by_id failed for msg {}: {}; using update payload",
-                                            msg.id(), e
-                                        );
-                                        None
-                                    }
+                    let chat_id = msg
+                        .peer_id()
+                        .bot_api_dialog_id()
+                        .map(peer_id_to_chat_id)
+                        .unwrap_or_else(|| "tg-unknown".to_string());
+
+                    // Re-fetch the message by ID to get the full text.
+                    // Handles both initial truncation (NewMessage) and streaming
+                    // edits (MessageEdited) from bots building up their response.
+                    let full_msg: Option<grammers_client::message::Message> =
+                        if let Some(peer_ref) = peer_cache.get(&chat_id) {
+                            match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
+                                Ok(mut msgs) => msgs.pop().flatten(),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "get_messages_by_id failed for msg {}: {}; using update payload",
+                                        msg.id(), e
+                                    );
+                                    None
                                 }
-                            } else {
-                                None
-                            };
+                            }
+                        } else {
+                            None
+                        };
 
-                        let effective_msg: &grammers_client::message::Message =
-                            full_msg.as_ref().unwrap_or(&msg);
+                    let effective_msg: &grammers_client::message::Message =
+                        full_msg.as_ref().unwrap_or(&msg);
 
-                        let fallback = chat_name_cache.get(&chat_id);
-                        if let Some(unified) = grammers_message_to_unified(effective_msg, &chat_id, fallback.as_deref()) {
-                            tracing::debug!(
-                                chat_id = %chat_id,
-                                msg_id = %effective_msg.id(),
-                                sender = %unified.sender,
-                                raw_text = %effective_msg.text(),
-                                "telegram raw message (live update)"
-                            );
+                    let fallback = chat_name_cache.get(&chat_id);
+                    if let Some(unified) = grammers_message_to_unified(effective_msg, &chat_id, fallback.as_deref()) {
+                        tracing::debug!(
+                            chat_id = %chat_id,
+                            msg_id = %effective_msg.id(),
+                            sender = %unified.sender,
+                            is_edit = %is_edit,
+                            raw_text = %effective_msg.text(),
+                            "telegram raw message (live update)"
+                        );
+                        if is_edit {
+                            let _ = tx.send(ProviderEvent::MessageUpdated(unified));
+                        } else {
                             let _ = tx.send(ProviderEvent::NewMessage(unified));
                         }
                     }
-                    // Other update kinds are ignored for now.
                 }
                 Err(e) => {
                     tracing::warn!("Telegram update stream error: {}; stopping", e);
