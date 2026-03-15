@@ -460,6 +460,50 @@ impl App {
                         }
                     }
                 }
+                ProviderEvent::MessageUpdated(msg) => {
+                    // Upsert to DB — INSERT OR REPLACE keeps the row current.
+                    if let Err(e) = self.db.insert_message(&msg) {
+                        tracing::debug!("MessageUpdated db upsert: {}", e);
+                    }
+
+                    // Update last_message preview on the chat
+                    let preview = msg.content.as_text().to_string();
+                    if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == msg.chat_id) {
+                        chat.last_message = Some(preview.clone());
+                    }
+                    let _ = self.db.update_last_message(&msg.chat_id, &preview);
+
+                    // Update message in-place if this chat is currently open
+                    let is_current_chat = self
+                        .state
+                        .selected_chat_id()
+                        .map(|id| id == msg.chat_id)
+                        .unwrap_or(false);
+
+                    if is_current_chat {
+                        if let Some(pos) = self
+                            .state
+                            .messages
+                            .iter()
+                            .position(|m| m.id == msg.id && m.chat_id == msg.chat_id)
+                        {
+                            tracing::debug!(
+                                msg_id = %msg.id,
+                                "MessageUpdated: replacing message at pos {}",
+                                pos
+                            );
+                            self.state.messages[pos] = msg;
+                        } else {
+                            // Edit arrived before history was loaded — push as new.
+                            tracing::debug!(
+                                msg_id = %msg.id,
+                                "MessageUpdated: message not in current view, appending"
+                            );
+                            self.state.messages.push(msg);
+                            self.state.scroll_offset = 0;
+                        }
+                    }
+                }
                 ProviderEvent::ChatsUpdated(chats) => {
                     // Persist and merge — but skip expensive DB reads
                     for chat in &chats {
