@@ -7,6 +7,8 @@ use ratatui::{
     Frame,
 };
 
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
 use crate::core::types::UnifiedMessage;
 use crate::tui::app_state::ActivePanel;
 
@@ -28,39 +30,48 @@ fn wrap_to_width(text: &str, max_w: usize) -> Vec<String> {
             continue;
         }
         let mut current = String::new();
+        let mut current_w: usize = 0;
         for word in original_line.split_whitespace() {
-            // Handle words longer than max_w: chop them
-            let mut word_remaining = word;
-            while !word_remaining.is_empty() {
-                let space_needed = if current.is_empty() { 0 } else { 1 };
-                let available = max_w.saturating_sub(current.len() + space_needed);
-                if available == 0 {
-                    // Flush current line
+            let word_w = UnicodeWidthStr::width(word);
+            let space_needed = if current.is_empty() { 0 } else { 1 };
+            if current_w + space_needed + word_w <= max_w {
+                // Word fits on current line
+                if !current.is_empty() {
+                    current.push(' ');
+                    current_w += 1;
+                }
+                current.push_str(word);
+                current_w += word_w;
+            } else if word_w > max_w {
+                // Word wider than max_w: flush current, then chop word char by char
+                if !current.is_empty() {
                     lines.push(current.clone());
                     current.clear();
-                    continue;
+                    current_w = 0;
                 }
-                if word_remaining.len() <= available {
-                    if !current.is_empty() {
-                        current.push(' ');
+                let mut chunk = String::new();
+                let mut chunk_w: usize = 0;
+                for ch in word.chars() {
+                    let ch_w = UnicodeWidthChar::width(ch).unwrap_or(0);
+                    if chunk_w + ch_w > max_w {
+                        lines.push(chunk.clone());
+                        chunk.clear();
+                        chunk_w = 0;
                     }
-                    current.push_str(word_remaining);
-                    word_remaining = "";
-                } else {
-                    // Check if word fits on a fresh line
-                    if current.is_empty() {
-                        // Force chop
-                        let (chunk, rest) = word_remaining.split_at(available.min(word_remaining.len()));
-                        current.push_str(chunk);
-                        lines.push(current.clone());
-                        current.clear();
-                        word_remaining = rest;
-                    } else {
-                        // Flush and retry on fresh line
-                        lines.push(current.clone());
-                        current.clear();
-                    }
+                    chunk.push(ch);
+                    chunk_w += ch_w;
                 }
+                if !chunk.is_empty() {
+                    current = chunk;
+                    current_w = chunk_w;
+                }
+            } else {
+                // Word doesn't fit on current line; flush and start fresh
+                if !current.is_empty() {
+                    lines.push(current.clone());
+                }
+                current = word.to_string();
+                current_w = word_w;
             }
         }
         if !current.is_empty() || lines.last().map(|l: &String| !l.is_empty()).unwrap_or(true) {
@@ -247,25 +258,24 @@ pub fn render_message_view(
         let bubble_max_w = (content_width * 70 / 100).max(20);
 
         for original_line in msg.content.as_text().split('\n') {
-        for text_line in wrap_to_width(original_line, bubble_max_w) {
-        let text_line = &text_line;
-            let line = if !text_line.contains("http://") && !text_line.contains("https://") {
-                if is_selected && !msg.is_outgoing {
-                    Line::from(vec![
-                        Span::styled(gutter, gutter_style),
-                        Span::styled(text_line.to_string(), select_bg.fg(msg_color)),
-                    ])
-                } else if is_selected {
-                    Line::from(Span::styled(text_line.to_string(), select_bg.fg(msg_color)))
-                } else {
-                    Line::from(Span::styled(
-                        text_line.to_string(),
-                        Style::default().fg(msg_color),
-                    ))
-                }
-            } else {
-                let spans: Vec<Span> =
+            for text_line in wrap_to_width(original_line, bubble_max_w) {
+                let text_line = &text_line;
+                let line = if !text_line.contains("http://") && !text_line.contains("https://") {
                     if is_selected && !msg.is_outgoing {
+                        Line::from(vec![
+                            Span::styled(gutter, gutter_style),
+                            Span::styled(text_line.to_string(), select_bg.fg(msg_color)),
+                        ])
+                    } else if is_selected {
+                        Line::from(Span::styled(text_line.to_string(), select_bg.fg(msg_color)))
+                    } else {
+                        Line::from(Span::styled(
+                            text_line.to_string(),
+                            Style::default().fg(msg_color),
+                        ))
+                    }
+                } else {
+                    let spans: Vec<Span> = if is_selected && !msg.is_outgoing {
                         let mut s = vec![Span::styled(gutter, gutter_style)];
                         s.extend(split_line_with_urls(text_line).into_iter().map(
                             |(seg, is_url)| {
@@ -310,14 +320,14 @@ pub fn render_message_view(
                             })
                             .collect()
                     };
-                Line::from(spans)
-            };
-            if msg.is_outgoing {
-                lines.push(line.alignment(Alignment::Right));
-            } else {
-                lines.push(line);
-            }
-        } // end wrap_to_width loop
+                    Line::from(spans)
+                };
+                if msg.is_outgoing {
+                    lines.push(line.alignment(Alignment::Right));
+                } else {
+                    lines.push(line);
+                }
+            } // end wrap_to_width loop
         } // end original_line loop
         lines.push(Line::from("")); // spacing
     }
@@ -340,7 +350,11 @@ pub fn render_message_view(
             if content_width == 0 {
                 return 1;
             }
-            let line_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+            let line_width: usize = line
+                .spans
+                .iter()
+                .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
+                .sum();
             if line_width == 0 {
                 1
             } else {
@@ -490,5 +504,33 @@ mod tests {
         let result = wrap_to_width("one two three four", 9);
         // "one two" = 7, "three" = 5 (fits alone), "four" = 4
         assert_eq!(result, vec!["one two", "three", "four"]);
+    }
+
+    #[test]
+    fn wrap_single_emoji_fits_at_width_2() {
+        // "🎉" has display width 2; should fit on one line when max_w=2
+        assert_eq!(wrap_to_width("🎉", 2), vec!["🎉"]);
+    }
+
+    #[test]
+    fn wrap_emoji_string_each_on_own_line() {
+        // Five emoji at width 2 each; max_w=2 → one per line
+        assert_eq!(
+            wrap_to_width("🎉🎊🎈🎁🎀", 2),
+            vec!["🎉", "🎊", "🎈", "🎁", "🎀"]
+        );
+    }
+
+    #[test]
+    fn wrap_mixed_ascii_emoji() {
+        // "hi 🎉" — "hi" is 2 cols, space+emoji pushes to 5 cols total; max_w=4
+        // "hi" fits, "🎉" goes to next line
+        assert_eq!(wrap_to_width("hi 🎉", 4), vec!["hi", "🎉"]);
+    }
+
+    #[test]
+    fn wrap_emoji_does_not_split_mid_codepoint() {
+        // "🎉🎊" at max_w=3 — "🎉" is width 2 (fits), "🎊" is width 2 (new line)
+        assert_eq!(wrap_to_width("🎉🎊", 3), vec!["🎉", "🎊"]);
     }
 }

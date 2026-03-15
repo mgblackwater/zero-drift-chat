@@ -10,6 +10,9 @@ pub type MediaBytes = Vec<u8>;
 #[derive(Debug, Clone)]
 pub enum ProviderEvent {
     NewMessage(UnifiedMessage),
+    /// An existing message was edited (e.g. a bot streaming its response token-by-token).
+    /// The TUI should replace the message with the same `id` in-place rather than appending.
+    MessageUpdated(UnifiedMessage),
     MessageStatusUpdate {
         message_id: String,
         status: MessageStatus,

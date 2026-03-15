@@ -366,6 +366,7 @@ impl TelegramProvider {
         api_hash: String,
         session_path: PathBuf,
         peer_cache: PeerCache,
+        chat_name_cache: ChatNameCache,
         client_slot: Arc<TokioMutex<Option<Client>>>,
         mut auth_rx: mpsc::UnboundedReceiver<AuthInput>,
         tx: mpsc::UnboundedSender<ProviderEvent>,
@@ -439,6 +440,7 @@ impl TelegramProvider {
             peer_cache.insert(&chat_id_str, peer_ref);
 
             let name = peer.name().unwrap_or("Unknown").to_string();
+            chat_name_cache.insert(&chat_id_str, &name);
             let last_message = dialog.last_message.as_ref().map(|m| {
                 if m.text().is_empty() {
                     "[Media]".to_string()
@@ -479,18 +481,56 @@ impl TelegramProvider {
         loop {
             match update_stream.next().await {
                 Ok(update) => {
-                    if let grammers_client::update::Update::NewMessage(msg) = update {
-                        let chat_id = msg
-                            .peer_id()
-                            .bot_api_dialog_id()
-                            .map(peer_id_to_chat_id)
-                            .unwrap_or_else(|| "tg-unknown".to_string());
+                    let (msg, is_edit) = match update {
+                        grammers_client::update::Update::NewMessage(m) => (m, false),
+                        grammers_client::update::Update::MessageEdited(m) => (m, true),
+                        _ => continue,
+                    };
 
-                        if let Some(unified) = grammers_message_to_unified(&msg, &chat_id, None) {
+                    let chat_id = msg
+                        .peer_id()
+                        .bot_api_dialog_id()
+                        .map(peer_id_to_chat_id)
+                        .unwrap_or_else(|| "tg-unknown".to_string());
+
+                    // Re-fetch the message by ID to get the full text.
+                    // Handles both initial truncation (NewMessage) and streaming
+                    // edits (MessageEdited) from bots building up their response.
+                    let full_msg: Option<grammers_client::message::Message> =
+                        if let Some(peer_ref) = peer_cache.get(&chat_id) {
+                            match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
+                                Ok(mut msgs) => msgs.pop().flatten(),
+                                Err(e) => {
+                                    tracing::warn!(
+                                        "get_messages_by_id failed for msg {}: {}; using update payload",
+                                        msg.id(), e
+                                    );
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+
+                    let effective_msg: &grammers_client::message::Message =
+                        full_msg.as_ref().unwrap_or(&msg);
+
+                    let fallback = chat_name_cache.get(&chat_id);
+                    if let Some(unified) = grammers_message_to_unified(effective_msg, &chat_id, fallback.as_deref()) {
+                        tracing::debug!(
+                            chat_id = %chat_id,
+                            msg_id = %effective_msg.id(),
+                            sender = %unified.sender,
+                            is_edit = %is_edit,
+                            raw_text = %effective_msg.text(),
+                            "telegram raw message (live update)"
+                        );
+                        if is_edit {
+                            let _ = tx.send(ProviderEvent::MessageUpdated(unified));
+                        } else {
                             let _ = tx.send(ProviderEvent::NewMessage(unified));
                         }
                     }
-                    // Other update kinds are ignored for now.
                 }
                 Err(e) => {
                     tracing::warn!("Telegram update stream error: {}; stopping", e);
@@ -538,6 +578,7 @@ impl MessagingProvider for TelegramProvider {
         let api_hash = self.api_hash.clone();
         let session_path = self.session_path.clone();
         let peer_cache = self.peer_cache.clone();
+        let chat_name_cache = self.chat_name_cache.clone();
         let client_slot = Arc::clone(&self.client);
         let auth_rx = self
             .auth_rx
@@ -548,7 +589,7 @@ impl MessagingProvider for TelegramProvider {
         // start() returns immediately and the TUI can draw before auth is needed.
         let connect_handle = tokio::spawn(async move {
             match Self::connect_and_run(
-                api_id, api_hash, session_path, peer_cache, client_slot, auth_rx, tx.clone(),
+                api_id, api_hash, session_path, peer_cache, chat_name_cache, client_slot, auth_rx, tx.clone(),
             )
             .await
             {
@@ -697,6 +738,13 @@ impl MessagingProvider for TelegramProvider {
             .map_err(|e| anyhow::anyhow!("iter_messages error: {}", e))?
         {
             if let Some(unified) = grammers_message_to_unified(&msg, chat_id, fallback.as_deref()) {
+                tracing::debug!(
+                    chat_id = %chat_id,
+                    msg_id = %msg.id(),
+                    sender = %unified.sender,
+                    raw_text = %msg.text(),
+                    "telegram raw message (history)"
+                );
                 messages.push(unified);
             }
         }
