@@ -29,15 +29,26 @@ pub struct TypingInfo {
     pub expires_at: Instant,
 }
 
-// in AppState:
+// in AppState struct:
 pub typing_states: HashMap<String, TypingInfo>,  // keyed by chat id (String)
 pub blink_phase: bool,
+```
+
+Initialize in `AppState::new()`:
+```rust
+typing_states: HashMap::new(),
+blink_phase: false,
 ```
 
 **`app.rs` (`App` struct)** — add one new field:
 
 ```rust
-pub tick_count: u64,   // new field; incremented on every AppEvent::Tick
+tick_count: u64,   // new field; alongside schedule_status_ticks
+```
+
+Initialize in `App::new()` (in the `Self { ... }` block, alongside `schedule_status_ticks: 0`):
+```rust
+tick_count: 0,
 ```
 
 `blink_phase` lives on `AppState` (accessible to the render path).
@@ -79,46 +90,52 @@ let (msg, is_edit) = match update {
 };
 ```
 
-This must be refactored so that `Update::Raw` is handled before the wildcard `continue`. The recommended restructure:
+This must be refactored so that `Update::Raw` is handled before the wildcard `continue`. The full restructured `Ok(update) =>` arm (inside `match update_stream.next().await`):
 
 ```rust
-// AFTER — handle Raw typing events, then process message updates:
-if let Update::Raw(raw) = &update {
-    match &raw.raw {
-        tl::enums::Update::UserTyping(u) => {
-            let chat_id = format!("tg-{}", u.user_id);
-            let user_name = chat_name_cache
-                .get(&chat_id)
-                .cloned()
-                .unwrap_or_else(|| format!("User {}", u.user_id));
-            let _ = event_tx.send(ProviderEvent::Typing { chat_id, user_name });
+Ok(update) => {
+    // Handle Raw typing updates via borrow — update is still owned below.
+    // The `continue` inside exits the loop iteration before the message path.
+    if let grammers_client::update::Update::Raw(raw) = &update {
+        match &raw.raw {
+            tl::enums::Update::UserTyping(u) => {
+                let chat_id = peer_id_to_chat_id(u.user_id);
+                let user_name = chat_name_cache
+                    .get(&chat_id)
+                    .cloned()
+                    .unwrap_or_else(|| format!("User {}", u.user_id));
+                let _ = event_tx.send(ProviderEvent::Typing { chat_id, user_name });
+            }
+            tl::enums::Update::ChatUserTyping(u) => {
+                let chat_id = peer_id_to_chat_id(u.chat_id);
+                let _ = event_tx.send(ProviderEvent::Typing {
+                    chat_id,
+                    user_name: "someone".to_string(),
+                });
+            }
+            tl::enums::Update::ChannelUserTyping(u) => {
+                let chat_id = peer_id_to_chat_id(u.channel_id);
+                let _ = event_tx.send(ProviderEvent::Typing {
+                    chat_id,
+                    user_name: "someone".to_string(),
+                });
+            }
+            _ => {}
         }
-        tl::enums::Update::ChatUserTyping(u) => {
-            let chat_id = format!("tg-{}", u.chat_id);
-            let _ = event_tx.send(ProviderEvent::Typing {
-                chat_id,
-                user_name: "someone".to_string(),
-            });
-        }
-        tl::enums::Update::ChannelUserTyping(u) => {
-            let chat_id = format!("tg-{}", u.channel_id);
-            let _ = event_tx.send(ProviderEvent::Typing {
-                chat_id,
-                user_name: "someone".to_string(),
-            });
-        }
-        _ => {}
+        continue;  // Raw updates are never messages; skip message-binding below
     }
-    continue;  // Raw updates are never messages; skip message-binding below
-}
 
-// existing message-binding path (unchanged):
-let (msg, is_edit) = match update {
-    Update::NewMessage(m) => (m, false),
-    Update::MessageEdited(m) => (m, true),
-    _ => continue,
-};
+    // existing message-binding path (unchanged):
+    let (msg, is_edit) = match update {
+        grammers_client::update::Update::NewMessage(m) => (m, false),
+        grammers_client::update::Update::MessageEdited(m) => (m, true),
+        _ => continue,
+    };
+    // ... rest of existing loop body unchanged ...
+}
 ```
+
+`peer_id_to_chat_id` (already imported via `use convert::peer_id_to_chat_id`) produces the canonical `"tg-{id}"` key format used throughout the codebase — use it instead of `format!("tg-{}", ...)` directly.
 
 **Note on group user names:** `chat_name_cache` is keyed by dialog/chat ID, not by participant user ID. For group typing events, resolving the participant's name would require a separate `client.get_entity()` call (async, could block the update loop) or a dedicated user name cache. For the initial implementation, group typers display as "someone" or a generic label. A user name cache can be layered on top later.
 
@@ -143,6 +160,12 @@ Event::ChatPresence(update) => {
     }
 }
 ```
+
+**Required `use` additions in `src/providers/whatsapp/mod.rs`:**
+```rust
+use whatsapp_rust::types::events::ChatPresence;
+```
+(`ChatPresenceUpdate` arrives as the inner type of `Event::ChatPresence`; `ChatPresence` is the enum for `.state`.)
 
 ### 5. AppState — Tick Handler
 
@@ -240,9 +263,11 @@ AppEvent::Render (every 33ms)
 
 ## Files Changed
 
+**Implementation order matters:** `src/core/provider.rs` must be modified first — all other files that reference `ProviderEvent::Typing` will not compile until the new variant exists.
+
 | File | Change |
 |------|--------|
-| `src/core/provider.rs` | Add `ProviderEvent::Typing { chat_id: String, user_name: String }` variant |
+| `src/core/provider.rs` | Add `ProviderEvent::Typing { chat_id: String, user_name: String }` variant — **do this first** |
 | `src/tui/app_state.rs` | Add `TypingInfo` struct; add `typing_states: HashMap<String, TypingInfo>` and `blink_phase: bool` to `AppState` |
 | `src/app.rs` | Add `tick_count: u64` to `App`; handle `ProviderEvent::Typing`; expire + blink logic on tick |
 | `src/providers/telegram/mod.rs` | Match `Update::Raw` and downcast to three TL typing update types |
