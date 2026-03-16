@@ -9,6 +9,7 @@ use futures::future::BoxFuture;
 use grammers_client::client::UpdatesConfiguration;
 use grammers_client::peer::Peer;
 use grammers_client::{Client, SenderPool, SignInError};
+use grammers_client::tl;
 use grammers_session::{Session, SessionData};
 use grammers_session::types::{ChannelKind, DcOption, PeerId, PeerInfo, UpdateState, UpdatesState};
 use serde::{Deserialize, Serialize};
@@ -481,6 +482,40 @@ impl TelegramProvider {
         loop {
             match update_stream.next().await {
                 Ok(update) => {
+                    // Handle Raw typing updates first (borrow avoids moving `update`).
+                    // The `continue` skips the message-processing path below.
+                    if let grammers_client::update::Update::Raw(raw) = &update {
+                        match &raw.raw {
+                            tl::enums::Update::UserTyping(u) => {
+                                // Private chat: chat_id derived from the peer user id
+                                let chat_id = peer_id_to_chat_id(u.user_id);
+                                let user_name = chat_name_cache
+                                    .get(&chat_id)
+                                    .unwrap_or_else(|| format!("User {}", u.user_id));
+                                let _ = tx.send(ProviderEvent::Typing { chat_id, user_name });
+                            }
+                            tl::enums::Update::ChatUserTyping(u) => {
+                                // Legacy group: participant name resolution not attempted;
+                                // chat_name_cache is keyed by chat id, not participant id.
+                                let chat_id = peer_id_to_chat_id(u.chat_id);
+                                let _ = tx.send(ProviderEvent::Typing {
+                                    chat_id,
+                                    user_name: "someone".to_string(),
+                                });
+                            }
+                            tl::enums::Update::ChannelUserTyping(u) => {
+                                let chat_id = peer_id_to_chat_id(u.channel_id);
+                                let _ = tx.send(ProviderEvent::Typing {
+                                    chat_id,
+                                    user_name: "someone".to_string(),
+                                });
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+
+                    // Message path (unchanged) — only NewMessage and MessageEdited reach here.
                     let (msg, is_edit) = match update {
                         grammers_client::update::Update::NewMessage(m) => (m, false),
                         grammers_client::update::Update::MessageEdited(m) => (m, true),
@@ -494,8 +529,6 @@ impl TelegramProvider {
                         .unwrap_or_else(|| "tg-unknown".to_string());
 
                     // Re-fetch the message by ID to get the full text.
-                    // Handles both initial truncation (NewMessage) and streaming
-                    // edits (MessageEdited) from bots building up their response.
                     let full_msg: Option<grammers_client::message::Message> =
                         if let Some(peer_ref) = peer_cache.get(&chat_id) {
                             match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
