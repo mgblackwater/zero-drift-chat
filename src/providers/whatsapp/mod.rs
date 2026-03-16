@@ -235,6 +235,7 @@ fn handle_wa_event(
     jid_cache: &JidCache,
 ) {
     use whatsapp_rust::types::events::Event;
+    use whatsapp_rust::types::presence::ChatPresence;
     use whatsapp_rust::Jid;
 
     match event {
@@ -428,6 +429,16 @@ fn handle_wa_event(
         Event::OfflineSyncCompleted(_) => {
             tracing::info!("WhatsApp offline sync completed");
             let _ = tx.send(ProviderEvent::SyncCompleted);
+        }
+        Event::ChatPresence(update) => {
+            if update.state == ChatPresence::Composing {
+                let chat_id = format!("wa-{}", update.source.chat);
+                // Use source.sender (not source.chat) — they differ in group chats
+                // where source.chat is the group JID and source.sender is the typer.
+                let user_name = update.source.sender.user.clone();
+                tracing::debug!(chat_id = %chat_id, user_name = %user_name, "WhatsApp typing");
+                let _ = tx.send(ProviderEvent::Typing { chat_id, user_name });
+            }
         }
         _ => {
             tracing::trace!("Unhandled WhatsApp event");
