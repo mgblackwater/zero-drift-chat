@@ -130,6 +130,8 @@ pub fn render_chat_list(
     let selected = list_state.selected().unwrap_or(0);
     let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
 
+    // fg intentionally omitted: letting span-level colors show through (green dot, yellow pin, etc.)
+    // The ▶ selector and blue background together communicate selection without overriding span colors.
     let highlight = Style::default()
         .bg(Color::Blue)
         .add_modifier(Modifier::BOLD);
