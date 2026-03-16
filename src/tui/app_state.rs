@@ -11,6 +11,9 @@ use crate::storage::ScheduledMessage;
 /// Tracks a contact who is currently typing in a chat.
 #[derive(Debug, Clone)]
 pub struct TypingInfo {
+    /// Stored for future use (e.g. "Alice is typing" in group chats).
+    /// Currently unused by the renderer, which shows a generic " typing" label.
+    #[allow(dead_code)]
     pub user_name: String,
     pub expires_at: Instant,
 }
