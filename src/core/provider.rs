@@ -30,6 +30,10 @@ pub enum ProviderEvent {
     /// `lid` and `pn` are raw JID strings (no `wa-` prefix).
     /// The app layer should persist this and remove the stale `wa-<lid>` chat entry.
     LidPnMappingDiscovered { lid: String, pn: String },
+    /// A contact in the given chat is currently typing.
+    /// Fires on each typing update from the platform; the TUI expires the
+    /// indicator automatically after 5 seconds without a new event.
+    Typing { chat_id: String, user_name: String },
 }
 
 #[async_trait]
