@@ -13,7 +13,6 @@ use crate::storage::ScheduledMessage;
 pub struct TypingInfo {
     /// Stored for future use (e.g. "Alice is typing" in group chats).
     /// Currently unused by the renderer, which shows a generic " typing" label.
-    #[allow(dead_code)]
     pub user_name: String,
     pub expires_at: Instant,
 }

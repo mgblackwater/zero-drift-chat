@@ -163,9 +163,9 @@ Event::ChatPresence(update) => {
 
 **Required `use` additions in `src/providers/whatsapp/mod.rs`:**
 ```rust
-use whatsapp_rust::types::events::ChatPresence;
+use whatsapp_rust::types::presence::ChatPresence;
 ```
-(`ChatPresenceUpdate` arrives as the inner type of `Event::ChatPresence`; `ChatPresence` is the enum for `.state`.)
+(`ChatPresenceUpdate` arrives as the inner type of `Event::ChatPresence`; `ChatPresence` is the enum for `.state`. Note: the type lives in `types::presence`, not `types::events`.)
 
 ### 5. AppState — Tick Handler
 
