@@ -109,6 +109,11 @@ assert_eq!(state.blink_phase, 0);
 
 No other test changes required. All 82 existing tests must still pass.
 
+## Notes
+
+- **Width:** Each dot is `"● "` (2 chars), so 3 dots = 6 chars total — 4 chars more than before. In narrow panes the chat name may truncate slightly more. Acceptable trade-off.
+- **Doc comment:** Update the `blink_phase` field comment in `app_state.rs` from `"green↔gray blink animation"` to reflect the 3-phase running-light behaviour.
+
 ## Out of Scope
 
 - Changing the dot character to a larger glyph
