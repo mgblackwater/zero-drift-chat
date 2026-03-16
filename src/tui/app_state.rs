@@ -358,8 +358,8 @@ pub struct AppState {
     pub schedule_status: Option<String>, // flash message for scheduling feedback
     /// Per-chat typing indicators: chat_id → who is typing and when it expires.
     pub typing_states: HashMap<String, TypingInfo>,
-    /// Toggled every 2 ticks (~500ms) to drive the green↔gray blink animation.
-    pub blink_phase: bool,
+    /// Running-light phase: 0=first dot lit, 1=middle, 2=last. Cycles every 2 ticks (~500ms/step).
+    pub blink_phase: u8,
 }
 
 impl AppState {
@@ -395,7 +395,7 @@ impl AppState {
             schedule_list_state: None,
             schedule_status: None,
             typing_states: HashMap::new(),
-            blink_phase: false,
+            blink_phase: 0,
         }
     }
 
@@ -578,7 +578,7 @@ mod tests {
     fn test_app_state_new_has_empty_typing_states() {
         let state = AppState::new();
         assert!(state.typing_states.is_empty());
-        assert!(!state.blink_phase);
+        assert_eq!(state.blink_phase, 0);
     }
 
     #[test]

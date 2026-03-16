@@ -11,7 +11,7 @@ use ratatui::{
 use crate::core::types::{ChatKind, Platform, UnifiedChat};
 use crate::tui::app_state::{ActivePanel, InputMode, TypingInfo};
 
-fn make_item(chat: &UnifiedChat, is_selected: bool, typing_blink: Option<bool>) -> ListItem<'static> {
+fn make_item(chat: &UnifiedChat, is_selected: bool, typing_blink: Option<u8>) -> ListItem<'static> {
     let unread = if chat.unread_count > 0 {
         format!(" ({})", chat.unread_count)
     } else {
@@ -54,13 +54,18 @@ fn make_item(chat: &UnifiedChat, is_selected: bool, typing_blink: Option<bool>) 
     let emoji_span = Span::raw(format!(" {} ", type_emoji));
 
     let spans = if let Some(phase) = typing_blink {
-        let dot_color = if phase { Color::Green } else { Color::DarkGray };
+        let dot = |i: u8| {
+            let color = if phase == i { Color::Green } else { Color::DarkGray };
+            Span::styled("● ", Style::default().fg(color))
+        };
         vec![
             Span::raw(selector),
             Span::styled(pin_tag.to_string(), Style::default().fg(Color::Yellow)),
             platform_span,
             emoji_span,
-            Span::styled("● ", Style::default().fg(dot_color)),
+            dot(0),
+            dot(1),
+            dot(2),
             Span::styled(name, Style::default().fg(name_color)),
             Span::styled(" typing", Style::default().fg(Color::DarkGray)),
         ]
@@ -85,7 +90,7 @@ pub fn render_chat_list(
     active_panel: ActivePanel,
     input_mode: InputMode,
     typing_states: &HashMap<String, TypingInfo>,
-    blink_phase: bool,
+    blink_phase: u8,
 ) {
     let border_color = if active_panel == ActivePanel::ChatList {
         Color::Cyan
@@ -127,7 +132,6 @@ pub fn render_chat_list(
 
     let highlight = Style::default()
         .bg(Color::Blue)
-        .fg(Color::White)
         .add_modifier(Modifier::BOLD);
 
     if pinned_count == 0 {

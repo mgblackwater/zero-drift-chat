@@ -355,7 +355,7 @@ impl App {
         let now = std::time::Instant::now();
         self.state.typing_states.retain(|_, v| v.expires_at > now);
         if self.tick_count % 2 == 0 {
-            self.state.blink_phase = !self.state.blink_phase;
+            self.state.blink_phase = (self.state.blink_phase + 1) % 3;
         }
 
         let events = self.router.poll_events();
