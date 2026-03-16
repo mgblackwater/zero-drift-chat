@@ -646,6 +646,9 @@ impl App {
                         lid_chat_id
                     );
                 }
+                ProviderEvent::Typing { .. } => {
+                    // TODO: Handle typing indicators (Task 3)
+                }
             }
         }
     }

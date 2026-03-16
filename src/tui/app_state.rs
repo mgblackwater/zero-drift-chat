@@ -1,9 +1,19 @@
+use std::collections::HashMap;
+use std::time::Instant;
+
 use ratatui::widgets::ListState;
 use tui_textarea::TextArea;
 
 use crate::config::AppConfig;
 use crate::core::types::{Platform, UnifiedChat, UnifiedMessage};
 use crate::storage::ScheduledMessage;
+
+/// Tracks a contact who is currently typing in a chat.
+#[derive(Debug, Clone)]
+pub struct TypingInfo {
+    pub user_name: String,
+    pub expires_at: Instant,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InputMode {
@@ -344,6 +354,10 @@ pub struct AppState {
     pub schedule_prompt_state: Option<SchedulePromptState>,
     pub schedule_list_state: Option<ScheduleListState>,
     pub schedule_status: Option<String>, // flash message for scheduling feedback
+    /// Per-chat typing indicators: chat_id → who is typing and when it expires.
+    pub typing_states: HashMap<String, TypingInfo>,
+    /// Toggled every 2 ticks (~500ms) to drive the green↔gray blink animation.
+    pub blink_phase: bool,
 }
 
 impl AppState {
@@ -378,6 +392,8 @@ impl AppState {
             schedule_prompt_state: None,
             schedule_list_state: None,
             schedule_status: None,
+            typing_states: HashMap::new(),
+            blink_phase: false,
         }
     }
 
@@ -548,5 +564,33 @@ impl AppState {
         } else {
             String::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn test_app_state_new_has_empty_typing_states() {
+        let state = AppState::new();
+        assert!(state.typing_states.is_empty());
+        assert!(!state.blink_phase);
+    }
+
+    #[test]
+    fn test_typing_info_expiry() {
+        let expired = TypingInfo {
+            user_name: "Alice".to_string(),
+            expires_at: Instant::now() - Duration::from_secs(1),
+        };
+        let active = TypingInfo {
+            user_name: "Bob".to_string(),
+            expires_at: Instant::now() + Duration::from_secs(5),
+        };
+        let now = Instant::now();
+        assert!(expired.expires_at <= now, "expired entry should be in the past");
+        assert!(active.expires_at > now, "active entry should be in the future");
     }
 }
