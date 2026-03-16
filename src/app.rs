@@ -23,7 +23,7 @@ use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database, ScheduledMessage};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SchedulePromptState, ScheduleListState, SearchState, SettingsKey, SettingsValue};
+use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SchedulePromptState, ScheduleListState, SearchState, SettingsKey, SettingsValue, TypingInfo};
 use crate::tui::time_parse::{parse_schedule_time, format_local_time};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
@@ -43,6 +43,7 @@ pub struct App {
     db_summary_tx: tokio::sync::mpsc::UnboundedSender<(String, String)>,
     db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
     schedule_status_ticks: u8,
+    tick_count: u64,
     telegram_auth_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::providers::telegram::AuthInput>>,
     event_tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
 }
@@ -93,6 +94,7 @@ impl App {
             db_summary_tx,
             db_summary_rx,
             schedule_status_ticks: 0,
+            tick_count: 0,
             telegram_auth_tx: None,
             event_tx,
         }
@@ -346,6 +348,14 @@ impl App {
             }
         } else {
             self.schedule_status_ticks = 0;
+        }
+
+        // Advance tick counter and drive typing indicator animation
+        self.tick_count += 1;
+        let now = std::time::Instant::now();
+        self.state.typing_states.retain(|_, v| v.expires_at > now);
+        if self.tick_count % 2 == 0 {
+            self.state.blink_phase = (self.state.blink_phase + 1) % 3;
         }
 
         let events = self.router.poll_events();
@@ -645,6 +655,12 @@ impl App {
                         pn,
                         lid_chat_id
                     );
+                }
+                ProviderEvent::Typing { chat_id, user_name } => {
+                    self.state.typing_states.insert(chat_id, TypingInfo {
+                        user_name,
+                        expires_at: std::time::Instant::now() + std::time::Duration::from_secs(5),
+                    });
                 }
             }
         }
