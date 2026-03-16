@@ -595,4 +595,16 @@ mod tests {
         assert!(expired.expires_at <= now, "expired entry should be in the past");
         assert!(active.expires_at > now, "active entry should be in the future");
     }
+
+    #[test]
+    fn test_blink_phase_cycles_0_1_2_0() {
+        // Simulate the tick handler: advance by (phase + 1) % 3 and verify full wrap-around.
+        let mut phase: u8 = 0;
+        phase = (phase + 1) % 3;
+        assert_eq!(phase, 1);
+        phase = (phase + 1) % 3;
+        assert_eq!(phase, 2);
+        phase = (phase + 1) % 3;
+        assert_eq!(phase, 0, "phase should wrap back to 0 after reaching 2");
+    }
 }

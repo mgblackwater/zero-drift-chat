@@ -113,6 +113,7 @@ No other test changes required. All 82 existing tests must still pass.
 
 - **Width:** Each dot is `"● "` (2 chars), so 3 dots = 6 chars total — 4 chars more than before. In narrow panes the chat name may truncate slightly more. Acceptable trade-off.
 - **Doc comment:** Update the `blink_phase` field comment in `app_state.rs` from `"green↔gray blink animation"` to reflect the 3-phase running-light behaviour.
+- **Highlight style fg:** `render_chat_list` must NOT set `.fg(Color::White)` on the highlight style. ratatui applies the highlight style over span-level colors; setting a global `fg` would override the per-dot green color, making the chaser invisible on selected rows. The `▶` selector and blue background are sufficient to communicate selection.
 
 ## Out of Scope
 
