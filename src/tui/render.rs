@@ -62,6 +62,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         state.input_mode,
         &state.typing_states,
         state.blink_phase,
+        &state.activity_cache,
     );
 
     message_view::render_message_view(

@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState},
+    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -91,7 +91,22 @@ pub fn render_chat_list(
     input_mode: InputMode,
     typing_states: &HashMap<String, TypingInfo>,
     blink_phase: u8,
+    activity_cache: &HashMap<String, [u32; 24]>,
 ) {
+    // Wide-screen: split off a 12-col graph column on the right
+    let (list_area, graph_area_opt) = if area.width >= 100 {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(area.width.saturating_sub(12)),
+                Constraint::Length(12),
+            ])
+            .split(area);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (area, None)
+    };
+
     let border_color = if active_panel == ActivePanel::ChatList {
         Color::Cyan
     } else {
@@ -124,8 +139,8 @@ pub fn render_chat_list(
         .title_alignment(title_alignment)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
+    let inner = block.inner(list_area);
+    f.render_widget(block, list_area);
 
     let selected = list_state.selected().unwrap_or(0);
     let pinned_count = chats.iter().filter(|c| c.is_pinned).count();
@@ -149,50 +164,81 @@ pub fn render_chat_list(
         // No highlight_symbol — selector is embedded in item content
         let list = List::new(items).highlight_style(highlight);
         f.render_stateful_widget(list, inner, list_state);
-        return;
+        // Do NOT return — fall through to render graph column below
+    } else {
+        // Split inner area: fixed pinned section on top, scrollable unpinned below
+        let sections = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(pinned_count as u16), Constraint::Min(0)])
+            .split(inner);
+
+        // --- Pinned section (always visible, no scroll) ---
+        let pinned_items: Vec<ListItem> = chats
+            .iter()
+            .filter(|c| c.is_pinned)
+            .enumerate()
+            .map(|(i, chat)| {
+                let blink = typing_states.get(&chat.id).map(|_| blink_phase);
+                make_item(chat, selected < pinned_count && i == selected, blink)
+            })
+            .collect();
+        let mut pinned_state = ListState::default();
+        if selected < pinned_count {
+            pinned_state.select(Some(selected));
+        }
+        let pinned_list = List::new(pinned_items).highlight_style(highlight);
+        f.render_stateful_widget(pinned_list, sections[0], &mut pinned_state);
+
+        // --- Unpinned section (scrollable) ---
+        let unpinned_items: Vec<ListItem> = chats
+            .iter()
+            .filter(|c| !c.is_pinned)
+            .enumerate()
+            .map(|(i, chat)| {
+                let blink = typing_states.get(&chat.id).map(|_| blink_phase);
+                make_item(
+                    chat,
+                    selected >= pinned_count && i == selected - pinned_count,
+                    blink,
+                )
+            })
+            .collect();
+        let mut unpinned_state = ListState::default();
+        if selected >= pinned_count {
+            unpinned_state.select(Some(selected - pinned_count));
+        }
+        let unpinned_list = List::new(unpinned_items).highlight_style(highlight);
+        f.render_stateful_widget(unpinned_list, sections[1], &mut unpinned_state);
     }
 
-    // Split inner area: fixed pinned section on top, scrollable unpinned below
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(pinned_count as u16), Constraint::Min(0)])
-        .split(inner);
+    // Render activity graph column if wide enough
+    if let Some(graph_area) = graph_area_opt {
+        use crate::storage::activity::encode_braille;
 
-    // --- Pinned section (always visible, no scroll) ---
-    let pinned_items: Vec<ListItem> = chats
-        .iter()
-        .filter(|c| c.is_pinned)
-        .enumerate()
-        .map(|(i, chat)| {
-            let blink = typing_states.get(&chat.id).map(|_| blink_phase);
-            make_item(chat, selected < pinned_count && i == selected, blink)
-        })
-        .collect();
-    let mut pinned_state = ListState::default();
-    if selected < pinned_count {
-        pinned_state.select(Some(selected));
-    }
-    let pinned_list = List::new(pinned_items).highlight_style(highlight);
-    f.render_stateful_widget(pinned_list, sections[0], &mut pinned_state);
+        let mut graph_lines: Vec<Line> = vec![
+            Line::from(vec![
+                Span::styled(" 24h       ", Style::default().fg(Color::DarkGray)),
+            ]),
+        ];
+        for chat in chats.iter() {
+            let arr = activity_cache
+                .get(&chat.id)
+                .copied()
+                .unwrap_or([0u32; 24]);
+            let braille = encode_braille(&arr);
+            let color = if chat.unread_count > 0 {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
+            graph_lines.push(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(braille, Style::default().fg(color)),
+                Span::raw(" "),
+            ]));
+        }
 
-    // --- Unpinned section (scrollable) ---
-    let unpinned_items: Vec<ListItem> = chats
-        .iter()
-        .filter(|c| !c.is_pinned)
-        .enumerate()
-        .map(|(i, chat)| {
-            let blink = typing_states.get(&chat.id).map(|_| blink_phase);
-            make_item(
-                chat,
-                selected >= pinned_count && i == selected - pinned_count,
-                blink,
-            )
-        })
-        .collect();
-    let mut unpinned_state = ListState::default();
-    if selected >= pinned_count {
-        unpinned_state.select(Some(selected - pinned_count));
+        let graph_widget = Paragraph::new(graph_lines);
+        f.render_widget(graph_widget, graph_area);
     }
-    let unpinned_list = List::new(unpinned_items).highlight_style(highlight);
-    f.render_stateful_widget(unpinned_list, sections[1], &mut unpinned_state);
 }
