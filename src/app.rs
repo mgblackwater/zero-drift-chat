@@ -202,6 +202,10 @@ impl App {
         // Load messages for the initially selected chat
         self.load_selected_chat_messages();
 
+        // Populate activity cache before first render
+        self.refresh_activity_cache();
+        self.state.activity_last_refresh_tick = 0;
+
         // Send any overdue scheduled messages
         self.check_scheduled_messages().await;
 
@@ -336,6 +340,13 @@ impl App {
         Ok(())
     }
 
+    fn refresh_activity_cache(&mut self) {
+        let chat_ids: Vec<String> = self.state.chats.iter().map(|c| c.id.clone()).collect();
+        let id_refs: Vec<&str> = chat_ids.iter().map(|s| s.as_str()).collect();
+        let cache = crate::storage::activity::query_activity_24h(&self.db, &id_refs);
+        self.state.activity_cache = cache;
+    }
+
     fn handle_tick(&mut self) {
         // Clear transient copy status after one tick so it disappears quickly
         self.state.copy_status = None;
@@ -352,6 +363,13 @@ impl App {
 
         // Advance tick counter and drive typing indicator animation
         self.tick_count += 1;
+
+        // Refresh activity cache every 1200 ticks (~5 minutes at 250ms/tick)
+        if self.tick_count.saturating_sub(self.state.activity_last_refresh_tick) >= 1200 {
+            self.state.activity_last_refresh_tick = self.tick_count;
+            self.refresh_activity_cache();
+        }
+
         let now = std::time::Instant::now();
         self.state.typing_states.retain(|_, v| v.expires_at > now);
         if self.tick_count % 2 == 0 {
@@ -369,6 +387,11 @@ impl App {
                     if let Err(e) = self.db.insert_message(&msg) {
                         tracing::error!("Failed to insert message: {}", e);
                     }
+
+                    // Increment activity cache for the current hour bucket (slot 23).
+                    self.state.activity_cache
+                        .entry(msg.chat_id.clone())
+                        .or_insert([0u32; 24])[23] += 1;
 
                     // Store push_name as contact so we can name phone-number chats
                     if !msg.is_outgoing && msg.sender != "You" && !msg.sender.is_empty() {

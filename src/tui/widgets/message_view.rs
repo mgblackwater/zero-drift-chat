@@ -1,15 +1,15 @@
 use chrono::Local;
 use ratatui::{
-    layout::{Alignment, Rect},
+    layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::core::types::UnifiedMessage;
+use crate::core::types::{MessageStatus, UnifiedMessage};
 use crate::tui::app_state::ActivePanel;
 
 /// Word-wrap `text` so each output line is at most `max_w` columns wide.
@@ -125,6 +125,59 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
     result
 }
 
+
+/// Build content spans for a single pre-wrapped line with optional URL styling.
+/// `is_selected`: adds blue background when true.
+/// `text_color`: base message text color.
+fn build_content_spans(line: &str, is_selected: bool, text_color: Color) -> Vec<Span<'static>> {
+    let bg = if is_selected { Color::Blue } else { Color::Black };
+    let url_style = Style::default()
+        .fg(Color::LightBlue)
+        .add_modifier(Modifier::UNDERLINED)
+        .bg(bg);
+
+    if !line.contains("http://") && !line.contains("https://") {
+        return vec![Span::styled(
+            line.to_string(),
+            Style::default().fg(text_color).bg(bg),
+        )];
+    }
+
+    split_line_with_urls(line)
+        .into_iter()
+        .map(|(seg, is_url)| {
+            if is_url {
+                Span::styled(seg.to_string(), url_style)
+            } else {
+                Span::styled(seg.to_string(), Style::default().fg(text_color).bg(bg))
+            }
+        })
+        .collect()
+}
+
+/// Returns the display column width of the delivery status indicator.
+fn display_width_of_status(status: MessageStatus) -> usize {
+    match status {
+        MessageStatus::Sending => 3,   // "···"  (3 × U+00B7)
+        MessageStatus::Sent => 1,      // "✓"
+        MessageStatus::Delivered => 2, // "✓✓"
+        MessageStatus::Read => 2,      // "✓✓"
+        MessageStatus::Failed => 1,    // "✗"
+    }
+}
+
+/// Returns the styled delivery-status span.
+fn status_span(status: MessageStatus) -> Span<'static> {
+    let (text, color) = match status {
+        MessageStatus::Sending => ("···", Color::DarkGray),
+        MessageStatus::Sent => ("✓", Color::DarkGray),
+        MessageStatus::Delivered => ("✓✓", Color::DarkGray),
+        MessageStatus::Read => ("✓✓", Color::Green),
+        MessageStatus::Failed => ("✗", Color::Red),
+    };
+    Span::styled(text, Style::default().fg(color))
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn render_message_view(
     f: &mut Frame,
@@ -176,7 +229,7 @@ pub fn render_message_view(
     let mut lines: Vec<Line> = Vec::new();
 
     for (i, msg) in messages.iter().enumerate() {
-        // Insert a full-width "─── N new ───" separator before the first new message
+        // Insert "─── N new ───" separator before first new message
         if Some(i) == new_start_idx {
             let content_width = area.width.saturating_sub(2) as usize;
             let label = format!(" {} new ", new_message_count);
@@ -192,145 +245,126 @@ pub fn render_message_view(
             .with_timezone(&Local)
             .format("%H:%M")
             .to_string();
-        let is_new = new_start_idx.map(|s| i >= s).unwrap_or(false) && !msg.is_outgoing;
         let is_selected = selected_message_idx == Some(i);
 
-        let (sender_color, msg_color) = if msg.is_outgoing {
-            (Color::Green, Color::White)
-        } else if is_new {
-            (Color::Yellow, Color::White)
-        } else {
-            (Color::Cyan, Color::Gray)
-        };
-
-        // Selection highlight style applied to every span in the selected message
-        let select_bg = if is_selected {
-            Style::default().bg(Color::Blue)
-        } else {
-            Style::default()
-        };
-
-        // Left gutter marker: only shown when this message is selected
-        let gutter = "▌ ";
-        let gutter_style = Style::default().fg(Color::Cyan).bg(Color::Blue);
-
-        let header = if msg.is_outgoing {
-            // Right-aligned: "10:02  You" pushed to the right edge
-            let mut line = Line::from(vec![
-                Span::styled(time.clone(), select_bg.fg(Color::DarkGray)),
-                Span::styled(format!("  {}", msg.sender), select_bg.fg(sender_color)),
-            ])
-            .alignment(Alignment::Right);
-            if is_selected {
-                // For outgoing selected, append a trailing marker on the right
-                line = Line::from(vec![
-                    Span::styled(time, select_bg.fg(Color::DarkGray)),
-                    Span::styled(format!("  {}", msg.sender), select_bg.fg(sender_color)),
-                    Span::styled(" ▐", Style::default().fg(Color::Cyan).bg(Color::Blue)),
-                ])
-                .alignment(Alignment::Right);
+        // Group boundary: direction flip, different sender, or >5min gap
+        let prev = if i > 0 { messages.get(i - 1) } else { None };
+        let is_group_start = match prev {
+            None => true,
+            Some(p) => {
+                p.is_outgoing != msg.is_outgoing
+                    || p.sender != msg.sender
+                    || (msg.timestamp - p.timestamp).num_seconds().abs() > 300
             }
-            line
-        } else if is_selected {
-            // Left-aligned selected: cyan gutter + highlighted sender + time
-            Line::from(vec![
-                Span::styled(gutter, gutter_style),
-                Span::styled(format!("{} ", msg.sender), select_bg.fg(sender_color)),
-                Span::styled(time, select_bg.fg(Color::DarkGray)),
-            ])
-        } else {
-            // Left-aligned normal: no gutter
-            Line::from(vec![
-                Span::styled(
-                    format!("{} ", msg.sender),
-                    Style::default().fg(sender_color),
-                ),
-                Span::styled(time, Style::default().fg(Color::DarkGray)),
-            ])
         };
 
-        lines.push(header);
-        let url_style = Style::default()
-            .fg(Color::LightBlue)
-            .add_modifier(Modifier::UNDERLINED);
+        // Blank separator between groups (not before the very first message)
+        if is_group_start && i > 0 {
+            lines.push(Line::from(""));
+        }
 
-        let content_width = area.width.saturating_sub(2) as usize;
-        let bubble_max_w = (content_width * 70 / 100).max(20);
+        let area_w = area.width.saturating_sub(2) as usize;
+        let sender_display = if msg.sender.is_empty() {
+            "(unknown)".to_string()
+        } else {
+            msg.sender.clone()
+        };
 
-        for original_line in msg.content.as_text().split('\n') {
-            for text_line in wrap_to_width(original_line, bubble_max_w) {
-                let text_line = &text_line;
-                let line = if !text_line.contains("http://") && !text_line.contains("https://") {
-                    if is_selected && !msg.is_outgoing {
-                        Line::from(vec![
-                            Span::styled(gutter, gutter_style),
-                            Span::styled(text_line.to_string(), select_bg.fg(msg_color)),
-                        ])
-                    } else if is_selected {
-                        Line::from(Span::styled(text_line.to_string(), select_bg.fg(msg_color)))
-                    } else {
-                        Line::from(Span::styled(
-                            text_line.to_string(),
-                            Style::default().fg(msg_color),
-                        ))
-                    }
+        if msg.is_outgoing {
+            // ── Outgoing: right-aligned, cyan ┃ ──────────────────────────────
+            if is_group_start {
+                let header = format!("{} {}", sender_display, time);
+                let pad = area_w.saturating_sub(header.len());
+                let header_line = if is_selected {
+                    Line::from(vec![
+                        Span::raw(" ".repeat(pad)),
+                        Span::styled(sender_display.clone(), Style::default().bg(Color::Blue).fg(Color::Cyan)),
+                        Span::styled(format!(" {}", time), Style::default().bg(Color::Blue).fg(Color::DarkGray)),
+                        Span::styled(" ▐", Style::default().fg(Color::Cyan).bg(Color::Blue)),
+                    ])
                 } else {
-                    let spans: Vec<Span> = if is_selected && !msg.is_outgoing {
-                        let mut s = vec![Span::styled(gutter, gutter_style)];
-                        s.extend(split_line_with_urls(text_line).into_iter().map(
-                            |(seg, is_url)| {
-                                if is_url {
-                                    Span::styled(
-                                        seg.to_string(),
-                                        select_bg
-                                            .fg(Color::LightBlue)
-                                            .add_modifier(Modifier::UNDERLINED),
-                                    )
-                                } else {
-                                    Span::styled(seg.to_string(), select_bg.fg(msg_color))
-                                }
-                            },
-                        ));
-                        s
-                    } else {
-                        split_line_with_urls(text_line)
-                            .into_iter()
-                            .map(|(seg, is_url)| {
-                                if is_url {
-                                    Span::styled(
-                                        seg.to_string(),
-                                        if is_selected {
-                                            select_bg
-                                                .fg(Color::LightBlue)
-                                                .add_modifier(Modifier::UNDERLINED)
-                                        } else {
-                                            url_style
-                                        },
-                                    )
-                                } else {
-                                    Span::styled(
-                                        seg.to_string(),
-                                        if is_selected {
-                                            select_bg.fg(msg_color)
-                                        } else {
-                                            Style::default().fg(msg_color)
-                                        },
-                                    )
-                                }
-                            })
-                            .collect()
-                    };
-                    Line::from(spans)
+                    Line::from(vec![
+                        Span::raw(" ".repeat(pad)),
+                        Span::styled(sender_display.clone(), Style::default().fg(Color::Cyan)),
+                        Span::styled(format!(" {}", time), Style::default().fg(Color::DarkGray)),
+                    ])
                 };
-                if msg.is_outgoing {
-                    lines.push(line.alignment(Alignment::Right));
+                lines.push(header_line);
+            }
+
+            let max_self_w = (area_w * 2 / 3).max(20);
+            let content_text = msg.content.as_text().to_string();
+            let mut all_wrapped: Vec<String> = Vec::new();
+            for original_line in content_text.split('\n') {
+                all_wrapped.extend(wrap_to_width(original_line, max_self_w));
+            }
+            let total = all_wrapped.len();
+            for (li, text_line) in all_wrapped.iter().enumerate() {
+                let is_last = li == total - 1;
+                let line_w = UnicodeWidthStr::width(text_line.as_str());
+                let mut spans: Vec<Span> = build_content_spans(text_line, is_selected, Color::White);
+                if is_last {
+                    let status_w = display_width_of_status(msg.status);
+                    let pad = area_w.saturating_sub(line_w + 2 + 1 + status_w);
+                    let mut row: Vec<Span> = vec![Span::raw(" ".repeat(pad))];
+                    row.append(&mut spans);
+                    row.push(Span::styled(" ┃", Style::default().fg(Color::Cyan).bg(if is_selected { Color::Blue } else { Color::Black })));
+                    row.push(Span::raw(" "));
+                    row.push({
+                        let mut s = status_span(msg.status);
+                        if is_selected { s = s.patch_style(Style::default().bg(Color::Blue)); }
+                        s
+                    });
+                    lines.push(Line::from(row));
                 } else {
-                    lines.push(line);
+                    let pad = area_w.saturating_sub(line_w + 2);
+                    let mut row: Vec<Span> = vec![Span::raw(" ".repeat(pad))];
+                    row.append(&mut spans);
+                    row.push(Span::styled(" ┃", Style::default().fg(Color::Cyan).bg(if is_selected { Color::Blue } else { Color::Black })));
+                    lines.push(Line::from(row));
                 }
-            } // end wrap_to_width loop
-        } // end original_line loop
-        lines.push(Line::from("")); // spacing
-    }
+            }
+        } else {
+            // ── Incoming: left-aligned, purple ┃ ─────────────────────────────
+            let is_new = new_start_idx.map(|s| i >= s).unwrap_or(false);
+            let name_color = if is_new { Color::Yellow } else { Color::Magenta };
+            let bar_color = if is_new { Color::Yellow } else { Color::Magenta };
+            let msg_color = if is_new { Color::White } else { Color::Gray };
+
+            if is_group_start {
+                let header_line = if is_selected {
+                    Line::from(vec![
+                        Span::styled("▌ ", Style::default().fg(Color::Cyan).bg(Color::Blue)),
+                        Span::styled(sender_display.clone(), Style::default().fg(name_color).bg(Color::Blue)),
+                        Span::styled(format!(" {}", time), Style::default().fg(Color::DarkGray).bg(Color::Blue)),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled("┃ ", Style::default().fg(bar_color)),
+                        Span::styled(sender_display.clone(), Style::default().fg(name_color)),
+                        Span::styled(format!(" {}", time), Style::default().fg(Color::DarkGray)),
+                    ])
+                };
+                lines.push(header_line);
+            }
+
+            let content_w = area_w.saturating_sub(2); // "┃ " = 2 cols
+            let content_text = msg.content.as_text().to_string();
+            for original_line in content_text.split('\n') {
+                for text_line in wrap_to_width(original_line, content_w) {
+                    let bar = if is_selected {
+                        Span::styled("▌ ", Style::default().fg(Color::Cyan).bg(Color::Blue))
+                    } else {
+                        Span::styled("┃ ", Style::default().fg(bar_color))
+                    };
+                    let mut content_spans = build_content_spans(&text_line, is_selected, msg_color);
+                    let mut row = vec![bar];
+                    row.append(&mut content_spans);
+                    lines.push(Line::from(row));
+                }
+            }
+        }
+    } // end message loop
 
     // Padding so the last message is never clipped by word-wrap miscalculation
     lines.push(Line::from(""));
@@ -338,34 +372,12 @@ pub fn render_message_view(
     lines.push(Line::from(""));
     lines.push(Line::from(""));
 
-    // Auto-scroll: estimate total visual lines accounting for word-wrap.
-    // We use ceiling division (no +1 per line) to avoid over-estimating, and
-    // rely on the 4 blank padding lines above to absorb any remaining error.
-    let visible_height = area.height.saturating_sub(2) as usize; // subtract borders
-    let content_width = area.width.saturating_sub(2) as usize; // subtract borders
-    let bubble_max_w = (content_width * 70 / 100).max(20);
-    let total_lines: usize = lines
-        .iter()
-        .map(|line| {
-            if content_width == 0 {
-                return 1;
-            }
-            let line_width: usize = line
-                .spans
-                .iter()
-                .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
-                .sum();
-            if line_width == 0 {
-                1
-            } else {
-                // ceiling division: how many rows does this line occupy after wrapping?
-                // Use bubble_max_w since message lines are pre-wrapped to that width.
-                line_width.div_ceil(bubble_max_w)
-            }
-        })
-        .sum();
+    // Auto-scroll: each Line in `lines` is a pre-wrapped single terminal row
+    // (Wrap is not set on the Paragraph, so no re-wrapping occurs at render time).
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let total_lines = lines.len();
     let auto_scroll = if total_lines > visible_height {
-        (total_lines - visible_height) as u16
+        u16::try_from(total_lines - visible_height).unwrap_or(u16::MAX)
     } else {
         0
     };
@@ -380,7 +392,6 @@ pub fn render_message_view(
 
     let paragraph = Paragraph::new(lines)
         .block(block)
-        .wrap(Wrap { trim: false })
         .scroll((effective_scroll, 0));
 
     f.render_widget(paragraph, area);
@@ -388,7 +399,7 @@ pub fn render_message_view(
 
 #[cfg(test)]
 mod tests {
-    use super::{split_line_with_urls, wrap_to_width};
+    use super::{display_width_of_status, split_line_with_urls, status_span, wrap_to_width};
 
     #[test]
     fn plain_text_no_url() {
@@ -532,5 +543,39 @@ mod tests {
     fn wrap_emoji_does_not_split_mid_codepoint() {
         // "🎉🎊" at max_w=3 — "🎉" is width 2 (fits), "🎊" is width 2 (new line)
         assert_eq!(wrap_to_width("🎉🎊", 3), vec!["🎉", "🎊"]);
+    }
+
+    #[test]
+    fn status_width_all_variants() {
+        use crate::core::types::MessageStatus;
+        assert_eq!(display_width_of_status(MessageStatus::Sending), 3);
+        assert_eq!(display_width_of_status(MessageStatus::Sent), 1);
+        assert_eq!(display_width_of_status(MessageStatus::Delivered), 2);
+        assert_eq!(display_width_of_status(MessageStatus::Read), 2);
+        assert_eq!(display_width_of_status(MessageStatus::Failed), 1);
+    }
+
+    #[test]
+    fn status_span_content_and_color() {
+        use crate::core::types::MessageStatus;
+        use ratatui::style::Color;
+        assert_eq!(status_span(MessageStatus::Sending).content.as_ref(), "···");
+        assert_eq!(status_span(MessageStatus::Sent).content.as_ref(), "✓");
+        assert_eq!(status_span(MessageStatus::Delivered).content.as_ref(), "✓✓");
+        assert_eq!(status_span(MessageStatus::Read).content.as_ref(), "✓✓");
+        assert_eq!(status_span(MessageStatus::Failed).content.as_ref(), "✗");
+        assert_eq!(status_span(MessageStatus::Read).style.fg, Some(Color::Green));
+        assert_eq!(status_span(MessageStatus::Failed).style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn pre_wrap_one_line_per_terminal_row() {
+        // 50-char string at max_w=40 wraps to 2 lines
+        let text = "a".repeat(50);
+        let wrapped = wrap_to_width(&text, 40);
+        assert_eq!(wrapped.len(), 2);
+        // 50-char string at max_w=60 stays 1 line
+        let wrapped2 = wrap_to_width(&text, 60);
+        assert_eq!(wrapped2.len(), 1);
     }
 }

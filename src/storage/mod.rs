@@ -1,3 +1,4 @@
+pub mod activity;
 mod addressbook;
 mod chats;
 pub mod db;

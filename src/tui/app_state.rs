@@ -360,6 +360,11 @@ pub struct AppState {
     pub typing_states: HashMap<String, TypingInfo>,
     /// Running-light phase: 0=first dot lit, 1=middle, 2=last. Cycles every 2 ticks (~500ms/step).
     pub blink_phase: u8,
+    /// Per-chat 24h activity cache: chat_id → [u32; 24].
+    /// Index 23 = current hour, index 0 = 23 hours ago.
+    pub activity_cache: std::collections::HashMap<String, [u32; 24]>,
+    /// `tick_count` value when the last full SQL activity refresh ran.
+    pub activity_last_refresh_tick: u64,
 }
 
 impl AppState {
@@ -396,6 +401,8 @@ impl AppState {
             schedule_status: None,
             typing_states: HashMap::new(),
             blink_phase: 0,
+            activity_cache: std::collections::HashMap::new(),
+            activity_last_refresh_tick: 0,
         }
     }
 
