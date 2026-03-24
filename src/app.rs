@@ -108,6 +108,13 @@ impl App {
             .flatten()
             .map(|v| v == "true")
             .unwrap_or(true);
+        // Load show_activity_graph preference from DB (default true)
+        self.state.show_activity_graph = self.db
+            .get_preference("show_activity_graph")
+            .ok()
+            .flatten()
+            .map(|v| v == "true")
+            .unwrap_or(true);
 
         // Register providers
         if self.config.mock_provider.enabled {
@@ -767,7 +774,7 @@ impl App {
                 self.state.scroll_down();
             }
             Action::OpenSettings => {
-                self.state.open_settings(&self.config, self.state.enter_sends);
+                self.state.open_settings(&self.config, self.state.enter_sends, self.state.show_activity_graph);
             }
             Action::SettingsNext => {
                 if let Some(ref mut s) = self.state.settings_state {
@@ -801,6 +808,14 @@ impl App {
                                 tracing::error!("Failed to persist enter_sends preference: {}", e);
                             }
                             self.state.enter_sends = v;
+                        }
+                    }
+                    if let Some(item) = settings.items.iter().find(|i| i.key == SettingsKey::ActivityGraph) {
+                        if let SettingsValue::Bool(v) = item.value {
+                            if let Err(e) = self.db.set_preference("show_activity_graph", if v { "true" } else { "false" }) {
+                                tracing::error!("Failed to persist show_activity_graph preference: {}", e);
+                            }
+                            self.state.show_activity_graph = v;
                         }
                     }
                 }

@@ -92,9 +92,9 @@ pub fn render_chat_list(
     typing_states: &HashMap<String, TypingInfo>,
     blink_phase: u8,
     activity_cache: &HashMap<String, [u32; 24]>,
+    show_activity_graph: bool,
 ) {
-    // Wide-screen: split off a 12-col graph column on the right
-    let (list_area, graph_area_opt) = if area.width >= 100 {
+    let (list_area, graph_area_opt) = if show_activity_graph {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
