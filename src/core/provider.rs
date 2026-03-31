@@ -21,7 +21,9 @@ pub enum ProviderEvent {
     AuthStatusChanged(Platform, AuthStatus),
     AuthQrCode(String),
     SyncCompleted,
-    SelfRead { chat_id: String },
+    SelfRead {
+        chat_id: String,
+    },
     // Telegram interactive auth — Option<String> carries retry error hint
     AuthPhonePrompt(Platform, Option<String>),
     AuthOtpPrompt(Platform, Option<String>),
@@ -29,11 +31,17 @@ pub enum ProviderEvent {
     /// A WhatsApp LID↔PN JID mapping was discovered at runtime.
     /// `lid` and `pn` are raw JID strings (no `wa-` prefix).
     /// The app layer should persist this and remove the stale `wa-<lid>` chat entry.
-    LidPnMappingDiscovered { lid: String, pn: String },
+    LidPnMappingDiscovered {
+        lid: String,
+        pn: String,
+    },
     /// A contact in the given chat is currently typing.
     /// Fires on each typing update from the platform; the TUI expires the
     /// indicator automatically after 5 seconds without a new event.
-    Typing { chat_id: String, user_name: String },
+    Typing {
+        chat_id: String,
+        user_name: String,
+    },
 }
 
 #[async_trait]
@@ -53,7 +61,9 @@ pub trait MessagingProvider: Send + Sync {
     /// The default implementation returns an error; providers that serve E2EE
     /// media (e.g. WhatsApp) must override this.
     async fn download_media(&self, _params: &MediaDecryptParams) -> Result<MediaBytes> {
-        Err(anyhow::anyhow!("download_media not supported by this provider"))
+        Err(anyhow::anyhow!(
+            "download_media not supported by this provider"
+        ))
     }
     fn name(&self) -> &str;
     fn platform(&self) -> Platform;

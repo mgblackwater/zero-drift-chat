@@ -1,5 +1,5 @@
-use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
@@ -74,9 +74,7 @@ pub async fn open_image_from_bytes(
     cache_key: &str,
     mime_type: Option<&str>,
 ) -> anyhow::Result<()> {
-    let ext = mime_type
-        .and_then(ext_from_content_type)
-        .unwrap_or("jpg");
+    let ext = mime_type.and_then(ext_from_content_type).unwrap_or("jpg");
 
     let path = temp_path_for_url(cache_key, ext);
 
@@ -202,8 +200,10 @@ async fn spawn_os_opener(path: &std::path::Path) {
             .spawn();
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-        let spawn_result: std::io::Result<std::process::Child> =
-            Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "unsupported OS"));
+        let spawn_result: std::io::Result<std::process::Child> = Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "unsupported OS",
+        ));
 
         match spawn_result {
             Ok(mut child) => {
@@ -288,31 +288,53 @@ mod tests {
         let png_s = png.to_string_lossy();
         assert!(jpg_s.ends_with(".jpg"), "expected .jpg, got: {}", jpg_s);
         assert!(png_s.ends_with(".png"), "expected .png, got: {}", png_s);
-        assert!(jpg_s.contains("zero-drift-"), "path should contain zero-drift-: {}", jpg_s);
+        assert!(
+            jpg_s.contains("zero-drift-"),
+            "path should contain zero-drift-: {}",
+            jpg_s
+        );
     }
 
     // --- ext_from_url ---
 
     #[test]
     fn test_ext_from_url_jpg() {
-        assert_eq!(ext_from_url("https://cdn.example.com/photo.jpg"), Some("jpg"));
-        assert_eq!(ext_from_url("https://cdn.example.com/photo.jpeg"), Some("jpg"));
-        assert_eq!(ext_from_url("https://cdn.example.com/photo.JPG"), Some("jpg"));
+        assert_eq!(
+            ext_from_url("https://cdn.example.com/photo.jpg"),
+            Some("jpg")
+        );
+        assert_eq!(
+            ext_from_url("https://cdn.example.com/photo.jpeg"),
+            Some("jpg")
+        );
+        assert_eq!(
+            ext_from_url("https://cdn.example.com/photo.JPG"),
+            Some("jpg")
+        );
     }
 
     #[test]
     fn test_ext_from_url_png() {
-        assert_eq!(ext_from_url("https://cdn.example.com/image.png"), Some("png"));
+        assert_eq!(
+            ext_from_url("https://cdn.example.com/image.png"),
+            Some("png")
+        );
     }
 
     #[test]
     fn test_ext_from_url_gif() {
-        assert_eq!(ext_from_url("https://cdn.example.com/anim.gif"), Some("gif"));
+        assert_eq!(
+            ext_from_url("https://cdn.example.com/anim.gif"),
+            Some("gif")
+        );
     }
 
     #[test]
     fn test_ext_from_url_webp() {
-        assert_eq!(ext_from_url("https://cdn.example.com/img.webp"), Some("webp"));
+        assert_eq!(
+            ext_from_url("https://cdn.example.com/img.webp"),
+            Some("webp")
+        );
     }
 
     #[test]
@@ -338,7 +360,10 @@ mod tests {
     #[test]
     fn test_ext_from_content_type_jpeg() {
         assert_eq!(ext_from_content_type("image/jpeg"), Some("jpg"));
-        assert_eq!(ext_from_content_type("image/jpeg; charset=utf-8"), Some("jpg"));
+        assert_eq!(
+            ext_from_content_type("image/jpeg; charset=utf-8"),
+            Some("jpg")
+        );
     }
 
     #[test]

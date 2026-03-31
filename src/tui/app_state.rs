@@ -486,9 +486,18 @@ impl AppState {
         self.scroll_offset = self.scroll_offset.saturating_sub(3);
     }
 
-    pub fn open_settings(&mut self, config: &AppConfig, enter_sends: bool, show_activity_graph: bool) {
+    pub fn open_settings(
+        &mut self,
+        config: &AppConfig,
+        enter_sends: bool,
+        show_activity_graph: bool,
+    ) {
         let mut s = SettingsState::from_config(config, enter_sends);
-        if let Some(item) = s.items.iter_mut().find(|i| i.key == SettingsKey::ActivityGraph) {
+        if let Some(item) = s
+            .items
+            .iter_mut()
+            .find(|i| i.key == SettingsKey::ActivityGraph)
+        {
             item.value = SettingsValue::Bool(show_activity_graph);
         }
         self.settings_state = Some(s);
@@ -610,8 +619,14 @@ mod tests {
             expires_at: Instant::now() + Duration::from_secs(5),
         };
         let now = Instant::now();
-        assert!(expired.expires_at <= now, "expired entry should be in the past");
-        assert!(active.expires_at > now, "active entry should be in the future");
+        assert!(
+            expired.expires_at <= now,
+            "expired entry should be in the past"
+        );
+        assert!(
+            active.expires_at > now,
+            "active entry should be in the future"
+        );
     }
 
     #[test]

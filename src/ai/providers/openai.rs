@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -54,19 +54,25 @@ struct ChoiceMessage {
 #[async_trait]
 impl AiProvider for OpenAiClient {
     async fn complete(&self, req: CompletionRequest, cancel: CancellationToken) -> Result<String> {
-        let mut messages = vec![
-            ChatMessage { role: "system".to_string(), content: req.system.clone() },
-        ];
+        let mut messages = vec![ChatMessage {
+            role: "system".to_string(),
+            content: req.system.clone(),
+        }];
 
         // Build a single context block so the AI sees [You]/[Them] labels clearly
         if !req.context.is_empty() {
-            let history: String = req.context.iter().map(|m| {
-                let label = match m.role {
-                    MessageRole::User => "[You]",
-                    MessageRole::Assistant => "[Them]",
-                };
-                format!("{}: {}", label, m.content)
-            }).collect::<Vec<_>>().join("\n");
+            let history: String = req
+                .context
+                .iter()
+                .map(|m| {
+                    let label = match m.role {
+                        MessageRole::User => "[You]",
+                        MessageRole::Assistant => "[Them]",
+                    };
+                    format!("{}: {}", label, m.content)
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
             messages.push(ChatMessage {
                 role: "user".to_string(),
                 content: format!("Conversation history:\n{}", history),
@@ -79,7 +85,10 @@ impl AiProvider for OpenAiClient {
 
         messages.push(ChatMessage {
             role: "user".to_string(),
-            content: format!("Complete only the end of this message I'm typing (a few words max): {}", req.partial_input),
+            content: format!(
+                "Complete only the end of this message I'm typing (a few words max): {}",
+                req.partial_input
+            ),
         });
 
         let body = ChatRequest {
@@ -89,7 +98,8 @@ impl AiProvider for OpenAiClient {
             stream: false,
         };
 
-        let mut builder = self.client
+        let mut builder = self
+            .client
             .post(format!("{}/v1/chat/completions", self.base_url))
             .json(&body);
 

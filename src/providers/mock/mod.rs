@@ -74,21 +74,21 @@ impl MockProvider {
         let count = self.chat_count.min(CHAT_NAMES.len());
         (0..count)
             .map(|i| UnifiedChat {
-                id:           format!("mock-chat-{}", i),
-                platform:     Platform::Mock,
-                name:         CHAT_NAMES[i].to_string(),
+                id: format!("mock-chat-{}", i),
+                platform: Platform::Mock,
+                name: CHAT_NAMES[i].to_string(),
                 display_name: None,
                 last_message: None,
                 unread_count: 0,
                 kind: if NEWSLETTER_INDICES.contains(&i) {
                     ChatKind::Newsletter
                 } else if i == 2 {
-                    ChatKind::Group   // "Team Standup"
+                    ChatKind::Group // "Team Standup"
                 } else {
                     ChatKind::Chat
                 },
                 is_pinned: false,
-                is_muted:  false,
+                is_muted: false,
             })
             .collect()
     }
@@ -99,7 +99,7 @@ impl MockProvider {
         // Use deterministic seed data so messages are stable across restarts.
         // Each chat gets a fixed set of messages with stable IDs.
         let seed_convos: &[&[usize]] = &[
-            &[0, 3, 6, 1, 9, 14, 4],   // chat 0
+            &[0, 3, 6, 1, 9, 14, 4],    // chat 0
             &[2, 7, 11, 5, 16, 8],      // chat 1
             &[12, 0, 17, 3, 14, 10, 1], // chat 2
             &[4, 8, 15, 2, 19, 6],      // chat 3
@@ -121,15 +121,16 @@ impl MockProvider {
                 } else {
                     chat.name.clone()
                 };
-                let timestamp =
-                    base_time + chrono::Duration::minutes(j as i64 * 15);
+                let timestamp = base_time + chrono::Duration::minutes(j as i64 * 15);
 
                 all_messages.push(UnifiedMessage {
                     id: format!("mock-seed-{}-{}", chat_idx, j),
                     chat_id: chat.id.clone(),
                     platform: Platform::Mock,
                     sender,
-                    content: MessageContent::Text(MOCK_MESSAGES[content_idx % MOCK_MESSAGES.len()].to_string()),
+                    content: MessageContent::Text(
+                        MOCK_MESSAGES[content_idx % MOCK_MESSAGES.len()].to_string(),
+                    ),
                     timestamp,
                     status: MessageStatus::Read,
                     is_outgoing,
@@ -170,9 +171,8 @@ impl MessagingProvider for MockProvider {
         let interval = self.message_interval_secs;
 
         let handle = tokio::spawn(async move {
-            let mut interval_timer = tokio::time::interval(
-                tokio::time::Duration::from_secs(interval),
-            );
+            let mut interval_timer =
+                tokio::time::interval(tokio::time::Duration::from_secs(interval));
             interval_timer.tick().await; // skip first immediate tick
 
             loop {

@@ -3,17 +3,19 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::{
-    execute,
     event::{DisableBracketedPaste, EnableBracketedPaste, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle},
+    execute,
+    terminal::{
+        disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetTitle,
+    },
 };
 use ratatui::{backend::CrosstermBackend, Terminal};
 
-use crate::ai::worker::{AiWorker, AiRequest};
 use crate::ai::context::RawMessage;
-use crate::ai::providers::openai::OpenAiClient;
 use crate::ai::providers::anthropic::AnthropicClient;
 use crate::ai::providers::gemini::GeminiClient;
+use crate::ai::providers::openai::OpenAiClient;
+use crate::ai::worker::{AiRequest, AiWorker};
 use crate::config::AppConfig;
 use crate::core::provider::ProviderEvent;
 use crate::core::types::{AuthStatus, MessageContent, Platform};
@@ -23,13 +25,16 @@ use crate::providers::whatsapp::WhatsAppProvider;
 use crate::storage::{AddressBook, Database, ScheduledMessage};
 use tui_textarea::TextArea;
 
-use crate::tui::app_state::{AppState, ChatMenuItem, InputMode, SchedulePromptState, ScheduleListState, SearchState, SettingsKey, SettingsValue, TypingInfo};
-use crate::tui::time_parse::{parse_schedule_time, format_local_time};
+use crate::tui;
+use crate::tui::app_state::{
+    AppState, ChatMenuItem, InputMode, ScheduleListState, SchedulePromptState, SearchState,
+    SettingsKey, SettingsValue, TypingInfo,
+};
 use crate::tui::event::{AppEvent, EventHandler};
 use crate::tui::keybindings::{map_key, Action};
 use crate::tui::render;
 use crate::tui::search::top_fuzzy_matches;
-use crate::tui;
+use crate::tui::time_parse::{format_local_time, parse_schedule_time};
 
 pub struct App {
     state: AppState,
@@ -44,7 +49,8 @@ pub struct App {
     db_summary_rx: tokio::sync::mpsc::UnboundedReceiver<(String, String)>,
     schedule_status_ticks: u8,
     tick_count: u64,
-    telegram_auth_tx: Option<tokio::sync::mpsc::UnboundedSender<crate::providers::telegram::AuthInput>>,
+    telegram_auth_tx:
+        Option<tokio::sync::mpsc::UnboundedSender<crate::providers::telegram::AuthInput>>,
     event_tx: tokio::sync::mpsc::UnboundedSender<AppEvent>,
 }
 
@@ -65,11 +71,15 @@ impl App {
             "AI config loaded"
         );
         let ai_worker = if config.ai.enabled {
-            let provider: Box<dyn crate::ai::providers::AiProvider> = match config.ai.provider.as_str() {
-                "anthropic" => Box::new(AnthropicClient::new(config.ai.api_key.clone())),
-                "gemini"    => Box::new(GeminiClient::new(config.ai.api_key.clone())),
-                _           => Box::new(OpenAiClient::new(config.ai.base_url.clone(), config.ai.api_key.clone())),
-            };
+            let provider: Box<dyn crate::ai::providers::AiProvider> =
+                match config.ai.provider.as_str() {
+                    "anthropic" => Box::new(AnthropicClient::new(config.ai.api_key.clone())),
+                    "gemini" => Box::new(GeminiClient::new(config.ai.api_key.clone())),
+                    _ => Box::new(OpenAiClient::new(
+                        config.ai.base_url.clone(),
+                        config.ai.api_key.clone(),
+                    )),
+                };
             tracing::info!("AI worker created — autocomplete enabled");
             Some(AiWorker::new(provider, config.ai.clone(), event_tx.clone()))
         } else {
@@ -77,7 +87,8 @@ impl App {
             None
         };
 
-        let (db_summary_tx, db_summary_rx) = tokio::sync::mpsc::unbounded_channel::<(String, String)>();
+        let (db_summary_tx, db_summary_rx) =
+            tokio::sync::mpsc::unbounded_channel::<(String, String)>();
 
         let mut state = AppState::new();
         state.ai_debug = config.ai.debug;
@@ -102,14 +113,16 @@ impl App {
 
     pub async fn run(&mut self, mut events: EventHandler) -> anyhow::Result<()> {
         // Load enter_sends preference from DB (default true)
-        self.state.enter_sends = self.db
+        self.state.enter_sends = self
+            .db
             .get_preference("enter_sends")
             .ok()
             .flatten()
             .map(|v| v == "true")
             .unwrap_or(true);
         // Load show_activity_graph preference from DB (default true)
-        self.state.show_activity_graph = self.db
+        self.state.show_activity_graph = self
+            .db
             .get_preference("show_activity_graph")
             .ok()
             .flatten()
@@ -126,10 +139,7 @@ impl App {
         }
 
         if self.config.whatsapp.enabled {
-            let session_path = format!(
-                "{}/whatsapp-session.db",
-                self.config.general.data_dir
-            );
+            let session_path = format!("{}/whatsapp-session.db", self.config.general.data_dir);
             let lid_mappings = self.db.load_lid_mappings().unwrap_or_default();
             let wa = WhatsAppProvider::new_with_lid_mappings(session_path, lid_mappings);
             self.router.register_provider(Box::new(wa));
@@ -144,10 +154,7 @@ impl App {
                     "Telegram enabled but api_id or api_hash not configured — skipping"
                 );
             } else {
-                let session_path = format!(
-                    "{}/telegram-session.db",
-                    self.config.general.data_dir
-                );
+                let session_path = format!("{}/telegram-session.db", self.config.general.data_dir);
                 let tg = crate::providers::telegram::TelegramProvider::new(
                     api_id,
                     api_hash,
@@ -259,17 +266,30 @@ impl App {
                                 let partial = self.state.input.lines().join("\n");
                                 if !partial.is_empty() {
                                     if let Some(worker) = self.ai_worker.as_mut() {
-                                        let messages: Vec<RawMessage> = self.state.messages.iter()
+                                        let messages: Vec<RawMessage> = self
+                                            .state
+                                            .messages
+                                            .iter()
                                             .filter_map(|m| {
                                                 let text = match &m.content {
-                                                    crate::core::types::MessageContent::Text(t) => t.clone(),
+                                                    crate::core::types::MessageContent::Text(t) => {
+                                                        t.clone()
+                                                    }
                                                     _ => return None,
                                                 };
-                                                Some(RawMessage { is_outgoing: m.is_outgoing, text })
+                                                Some(RawMessage {
+                                                    is_outgoing: m.is_outgoing,
+                                                    text,
+                                                })
                                             })
                                             .collect();
-                                        let summary = self.state.selected_chat_id()
-                                            .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                                        let summary =
+                                            self.state.selected_chat_id().and_then(|id| {
+                                                self.db
+                                                    .get_preference(&format!("ai_summary:{}", id))
+                                                    .ok()
+                                                    .flatten()
+                                            });
                                         self.state.push_ai_log(format!(
                                             "[debounce] → POST {}/v1/chat/completions | model={} | ctx={} msgs | input={:?}",
                                             self.config.ai.base_url, self.config.ai.model, messages.len(),
@@ -283,7 +303,11 @@ impl App {
                                             input = %partial,
                                             "AI autocomplete request"
                                         );
-                                        worker.request(AiRequest { partial_input: partial, messages, summary });
+                                        worker.request(AiRequest {
+                                            partial_input: partial,
+                                            messages,
+                                            summary,
+                                        });
                                     }
                                 }
                             }
@@ -334,6 +358,9 @@ impl App {
         }
 
         // Cleanup
+        if let Some(worker) = &mut self.ai_worker {
+            worker.shutdown();
+        }
         self.router.stop_all().await?;
         disable_raw_mode()?;
         execute!(
@@ -341,7 +368,7 @@ impl App {
             DisableBracketedPaste,
             LeaveAlternateScreen
         )?;
-        Self::update_title(false);   // restore clean title on exit
+        Self::update_title(false); // restore clean title on exit
         terminal.show_cursor()?;
 
         Ok(())
@@ -372,14 +399,18 @@ impl App {
         self.tick_count += 1;
 
         // Refresh activity cache every 1200 ticks (~5 minutes at 250ms/tick)
-        if self.tick_count.saturating_sub(self.state.activity_last_refresh_tick) >= 1200 {
+        if self
+            .tick_count
+            .saturating_sub(self.state.activity_last_refresh_tick)
+            >= 1200
+        {
             self.state.activity_last_refresh_tick = self.tick_count;
             self.refresh_activity_cache();
         }
 
         let now = std::time::Instant::now();
         self.state.typing_states.retain(|_, v| v.expires_at > now);
-        if self.tick_count % 2 == 0 {
+        if self.tick_count.is_multiple_of(2) {
             self.state.blink_phase = (self.state.blink_phase + 1) % 3;
         }
 
@@ -396,7 +427,8 @@ impl App {
                     }
 
                     // Increment activity cache for the current hour bucket (slot 23).
-                    self.state.activity_cache
+                    self.state
+                        .activity_cache
                         .entry(msg.chat_id.clone())
                         .or_insert([0u32; 24])[23] += 1;
 
@@ -405,9 +437,12 @@ impl App {
                         if let Some(phone) = Self::extract_wa_phone(&msg.chat_id) {
                             let _ = self.address_book.upsert_contact(phone, &msg.sender);
                             // Apply to the in-memory chat if it still shows a phone number
-                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == msg.chat_id) {
+                            if let Some(chat) =
+                                self.state.chats.iter_mut().find(|c| c.id == msg.chat_id)
+                            {
                                 if chat.display_name.is_none() {
-                                    let is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                                    let is_numeric =
+                                        chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
                                     if is_numeric {
                                         chat.name = msg.sender.clone();
                                     }
@@ -428,27 +463,17 @@ impl App {
                         .unwrap_or(false);
 
                     if !is_current_chat && !msg.is_outgoing {
-                        if let Some(chat) = self
-                            .state
-                            .chats
-                            .iter_mut()
-                            .find(|c| c.id == msg.chat_id)
+                        if let Some(chat) =
+                            self.state.chats.iter_mut().find(|c| c.id == msg.chat_id)
                         {
                             chat.unread_count += 1;
-                            let _ = self
-                                .db
-                                .update_unread_count(&chat.id, chat.unread_count);
+                            let _ = self.db.update_unread_count(&chat.id, chat.unread_count);
                             self.refresh_title();
                         }
                     }
 
                     // Update last message preview
-                    if let Some(chat) = self
-                        .state
-                        .chats
-                        .iter_mut()
-                        .find(|c| c.id == msg.chat_id)
-                    {
+                    if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == msg.chat_id) {
                         chat.last_message = Some(preview);
                     }
 
@@ -457,15 +482,23 @@ impl App {
                         self.state.messages.push(msg.clone());
                         self.state.scroll_offset = 0; // auto-scroll to bottom
 
-                        if let Some(worker) = &self.ai_worker {
+                        if let Some(worker) = &mut self.ai_worker {
                             if let Some(chat_id) = self.state.selected_chat_id() {
-                                let messages: Vec<crate::ai::context::RawMessage> = self.state.messages.iter()
+                                let messages: Vec<crate::ai::context::RawMessage> = self
+                                    .state
+                                    .messages
+                                    .iter()
                                     .filter_map(|m| {
                                         let text = match &m.content {
-                                            crate::core::types::MessageContent::Text(t) => t.clone(),
+                                            crate::core::types::MessageContent::Text(t) => {
+                                                t.clone()
+                                            }
                                             _ => return None,
                                         };
-                                        Some(crate::ai::context::RawMessage { is_outgoing: m.is_outgoing, text })
+                                        Some(crate::ai::context::RawMessage {
+                                            is_outgoing: m.is_outgoing,
+                                            text,
+                                        })
                                     })
                                     .collect();
                                 worker.maybe_generate_summary(
@@ -486,12 +519,19 @@ impl App {
                             0
                         } else {
                             // Top of unpinned section = one after the last pinned chat
-                            self.state.chats.iter().rposition(|c| c.is_pinned).map(|p| p + 1).unwrap_or(0)
+                            self.state
+                                .chats
+                                .iter()
+                                .rposition(|c| c.is_pinned)
+                                .map(|p| p + 1)
+                                .unwrap_or(0)
                         };
                         if pos != insert_pos {
                             self.state.chats.insert(insert_pos, chat);
                             if let Some(id) = selected_id {
-                                if let Some(new_pos) = self.state.chats.iter().position(|c| c.id == id) {
+                                if let Some(new_pos) =
+                                    self.state.chats.iter().position(|c| c.id == id)
+                                {
                                     self.state.chat_list_state.select(Some(new_pos));
                                 }
                             }
@@ -554,19 +594,20 @@ impl App {
 
                     // Merge: add new chats, update existing ones
                     for chat in chats {
-                        if let Some(existing) = self
-                            .state
-                            .chats
-                            .iter_mut()
-                            .find(|c| c.id == chat.id)
+                        if let Some(existing) =
+                            self.state.chats.iter_mut().find(|c| c.id == chat.id)
                         {
                             if chat.last_message.is_some() {
                                 existing.last_message = chat.last_message;
                             }
                             // Don't touch display_name — it's user-set
                             // Only update provider name if it looks better
-                            let existing_is_numeric = existing.name.chars().all(|c| c.is_ascii_digit() || c == '+');
-                            let new_is_numeric = chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
+                            let existing_is_numeric = existing
+                                .name
+                                .chars()
+                                .all(|c| c.is_ascii_digit() || c == '+');
+                            let new_is_numeric =
+                                chat.name.chars().all(|c| c.is_ascii_digit() || c == '+');
                             if !new_is_numeric || existing_is_numeric {
                                 existing.name = chat.name;
                             }
@@ -576,7 +617,9 @@ impl App {
                             if let Some(name) = self.resolve_contact_name(&new_chat.id) {
                                 new_chat.display_name = Some(name);
                             } else if let Some(phone) = Self::extract_wa_phone(&new_chat.id) {
-                                if let Ok(Some(contact_name)) = self.address_book.lookup_contact(phone) {
+                                if let Ok(Some(contact_name)) =
+                                    self.address_book.lookup_contact(phone)
+                                {
                                     new_chat.name = contact_name;
                                 }
                             }
@@ -588,12 +631,7 @@ impl App {
                 }
                 ProviderEvent::MessageStatusUpdate { message_id, status } => {
                     let _ = self.db.update_message_status(&message_id, status);
-                    if let Some(msg) = self
-                        .state
-                        .messages
-                        .iter_mut()
-                        .find(|m| m.id == message_id)
-                    {
+                    if let Some(msg) = self.state.messages.iter_mut().find(|m| m.id == message_id) {
                         msg.status = status;
                     }
                 }
@@ -635,7 +673,12 @@ impl App {
                             let _ = self.db.update_unread_count(&chat.id, 0);
                         }
                     }
-                    if self.state.selected_chat_id().map(|id| id == chat_id).unwrap_or(false) {
+                    if self
+                        .state
+                        .selected_chat_id()
+                        .map(|id| id == chat_id)
+                        .unwrap_or(false)
+                    {
                         self.state.new_message_count = 0;
                     }
                     self.refresh_title();
@@ -687,10 +730,14 @@ impl App {
                     );
                 }
                 ProviderEvent::Typing { chat_id, user_name } => {
-                    self.state.typing_states.insert(chat_id, TypingInfo {
-                        user_name,
-                        expires_at: std::time::Instant::now() + std::time::Duration::from_secs(5),
-                    });
+                    self.state.typing_states.insert(
+                        chat_id,
+                        TypingInfo {
+                            user_name,
+                            expires_at: std::time::Instant::now()
+                                + std::time::Duration::from_secs(5),
+                        },
+                    );
                 }
             }
         }
@@ -774,7 +821,11 @@ impl App {
                 self.state.scroll_down();
             }
             Action::OpenSettings => {
-                self.state.open_settings(&self.config, self.state.enter_sends, self.state.show_activity_graph);
+                self.state.open_settings(
+                    &self.config,
+                    self.state.enter_sends,
+                    self.state.show_activity_graph,
+                );
             }
             Action::SettingsNext => {
                 if let Some(ref mut s) = self.state.settings_state {
@@ -802,18 +853,35 @@ impl App {
                 }
                 // Save EnterSends to SQLite and apply live (no restart needed)
                 if let Some(ref settings) = self.state.settings_state {
-                    if let Some(item) = settings.items.iter().find(|i| i.key == SettingsKey::EnterSends) {
+                    if let Some(item) = settings
+                        .items
+                        .iter()
+                        .find(|i| i.key == SettingsKey::EnterSends)
+                    {
                         if let SettingsValue::Bool(v) = item.value {
-                            if let Err(e) = self.db.set_preference("enter_sends", if v { "true" } else { "false" }) {
+                            if let Err(e) = self
+                                .db
+                                .set_preference("enter_sends", if v { "true" } else { "false" })
+                            {
                                 tracing::error!("Failed to persist enter_sends preference: {}", e);
                             }
                             self.state.enter_sends = v;
                         }
                     }
-                    if let Some(item) = settings.items.iter().find(|i| i.key == SettingsKey::ActivityGraph) {
+                    if let Some(item) = settings
+                        .items
+                        .iter()
+                        .find(|i| i.key == SettingsKey::ActivityGraph)
+                    {
                         if let SettingsValue::Bool(v) = item.value {
-                            if let Err(e) = self.db.set_preference("show_activity_graph", if v { "true" } else { "false" }) {
-                                tracing::error!("Failed to persist show_activity_graph preference: {}", e);
+                            if let Err(e) = self.db.set_preference(
+                                "show_activity_graph",
+                                if v { "true" } else { "false" },
+                            ) {
+                                tracing::error!(
+                                    "Failed to persist show_activity_graph preference: {}",
+                                    e
+                                );
                             }
                             self.state.show_activity_graph = v;
                         }
@@ -827,11 +895,7 @@ impl App {
             Action::RenameChat => {
                 if let Some(idx) = self.state.chat_list_state.selected() {
                     if let Some(chat) = self.state.chats.get(idx) {
-                        let name = chat
-                            .display_name
-                            .as_ref()
-                            .unwrap_or(&chat.name)
-                            .clone();
+                        let name = chat.display_name.as_ref().unwrap_or(&chat.name).clone();
                         let mut ta = TextArea::from(vec![name]);
                         ta.move_cursor(tui_textarea::CursorMove::End);
                         self.state.input = ta;
@@ -840,7 +904,10 @@ impl App {
                 }
             }
             Action::ConfirmRename => {
-                let new_name = self.state.input.lines()
+                let new_name = self
+                    .state
+                    .input
+                    .lines()
                     .first()
                     .cloned()
                     .unwrap_or_default();
@@ -881,22 +948,35 @@ impl App {
                     match selected_item {
                         Some(ChatMenuItem::TogglePin) => {
                             // Enforce max 10 pinned chats
-                            if new_pinned && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10 {
+                            if new_pinned
+                                && self.state.chats.iter().filter(|c| c.is_pinned).count() >= 10
+                            {
                                 self.state.close_chat_menu();
                                 return;
                             }
                             let _ = self.db.set_chat_pinned(&chat_id, new_pinned);
-                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                            if let Some(chat) =
+                                self.state.chats.iter_mut().find(|c| c.id == chat_id)
+                            {
                                 chat.is_pinned = new_pinned;
                             }
-                            self.state.chats.sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
-                            let new_idx = self.state.chats.iter().position(|c| c.id == chat_id).unwrap_or(0);
+                            self.state
+                                .chats
+                                .sort_by_key(|c| std::cmp::Reverse(c.is_pinned));
+                            let new_idx = self
+                                .state
+                                .chats
+                                .iter()
+                                .position(|c| c.id == chat_id)
+                                .unwrap_or(0);
                             self.state.chat_list_state.select(Some(new_idx));
                         }
                         Some(ChatMenuItem::ToggleMute) => {
                             let new_muted = !menu.is_muted;
                             let _ = self.db.set_chat_muted(&chat_id, new_muted);
-                            if let Some(chat) = self.state.chats.iter_mut().find(|c| c.id == chat_id) {
+                            if let Some(chat) =
+                                self.state.chats.iter_mut().find(|c| c.id == chat_id)
+                            {
                                 chat.is_muted = new_muted;
                             }
                         }
@@ -920,8 +1000,12 @@ impl App {
                 use crossterm::event::KeyCode;
                 if let Some(ref mut ss) = self.state.search_state {
                     match key.code {
-                        KeyCode::Backspace => { ss.query.pop(); }
-                        KeyCode::Char(c) => { ss.query.push(c); }
+                        KeyCode::Backspace => {
+                            ss.query.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            ss.query.push(c);
+                        }
                         _ => {}
                     }
                     ss.results = top_fuzzy_matches(&ss.query, &self.state.chats, 5);
@@ -943,7 +1027,10 @@ impl App {
                 }
             }
             Action::SearchConfirm => {
-                let chat_idx = self.state.search_state.as_ref()
+                let chat_idx = self
+                    .state
+                    .search_state
+                    .as_ref()
                     .and_then(|ss| ss.results.get(ss.selected).copied());
                 if let Some(idx) = chat_idx {
                     self.state.search_state = None;
@@ -969,17 +1056,27 @@ impl App {
                     let partial = self.state.input.lines().join("\n");
                     if !partial.is_empty() {
                         if let Some(worker) = self.ai_worker.as_mut() {
-                            let messages: Vec<RawMessage> = self.state.messages.iter()
+                            let messages: Vec<RawMessage> = self
+                                .state
+                                .messages
+                                .iter()
                                 .filter_map(|m| {
                                     let text = match &m.content {
                                         crate::core::types::MessageContent::Text(t) => t.clone(),
                                         _ => return None,
                                     };
-                                    Some(RawMessage { is_outgoing: m.is_outgoing, text })
+                                    Some(RawMessage {
+                                        is_outgoing: m.is_outgoing,
+                                        text,
+                                    })
                                 })
                                 .collect();
-                            let summary = self.state.selected_chat_id()
-                                .and_then(|id| self.db.get_preference(&format!("ai_summary:{}", id)).ok().flatten());
+                            let summary = self.state.selected_chat_id().and_then(|id| {
+                                self.db
+                                    .get_preference(&format!("ai_summary:{}", id))
+                                    .ok()
+                                    .flatten()
+                            });
                             self.state.push_ai_log(format!(
                                 "[Ctrl+Space] → POST {}/v1/chat/completions | model={} | ctx={} msgs | input={:?}",
                                 self.config.ai.base_url, self.config.ai.model, messages.len(),
@@ -993,7 +1090,11 @@ impl App {
                                 input = %partial,
                                 "AI autocomplete request"
                             );
-                            worker.request(AiRequest { partial_input: partial, messages, summary });
+                            worker.request(AiRequest {
+                                partial_input: partial,
+                                messages,
+                                summary,
+                            });
                         }
                     }
                 }
@@ -1031,7 +1132,11 @@ impl App {
                 if let Some(idx) = self.state.selected_message_idx {
                     if let Some(msg) = self.state.messages.get(idx) {
                         match &msg.content {
-                            MessageContent::Image { url, decrypt_params, .. } => {
+                            MessageContent::Image {
+                                url,
+                                decrypt_params,
+                                ..
+                            } => {
                                 let url = url.clone();
                                 let _url = &url; // reserved for non-E2EE CDN path
                                 let platform = msg.platform;
@@ -1045,29 +1150,41 @@ impl App {
                                                 let mime = params.mime_type.clone();
                                                 let err_tx = self.event_tx.clone();
                                                 tokio::spawn(async move {
-                                                    if let Err(e) = crate::tui::media::open_image_from_bytes(
-                                                        bytes,
-                                                        &cache_key,
-                                                        mime.as_deref(),
-                                                    )
-                                                    .await
+                                                    if let Err(e) =
+                                                        crate::tui::media::open_image_from_bytes(
+                                                            bytes,
+                                                            &cache_key,
+                                                            mime.as_deref(),
+                                                        )
+                                                        .await
                                                     {
-                                                        tracing::error!("Failed to open image: {}", e);
+                                                        tracing::error!(
+                                                            "Failed to open image: {}",
+                                                            e
+                                                        );
                                                         let _ = err_tx.send(AppEvent::MediaError(
                                                             format!("Failed to open image: {}", e),
                                                         ));
                                                     }
                                                 });
-                                                self.state.copy_status = Some("Opening image...".to_string());
+                                                self.state.copy_status =
+                                                    Some("Opening image...".to_string());
                                             }
                                             Err(e) => {
                                                 tracing::error!("Failed to download media: {}", e);
-                                                self.state.copy_status = Some(format!("Failed to download image: {}", e));
+                                                self.state.copy_status = Some(format!(
+                                                    "Failed to download image: {}",
+                                                    e
+                                                ));
                                             }
                                         }
                                     } else {
-                                        tracing::error!("No provider found for platform {:?}", platform);
-                                        self.state.copy_status = Some("No provider for this message".to_string());
+                                        tracing::error!(
+                                            "No provider found for platform {:?}",
+                                            platform
+                                        );
+                                        self.state.copy_status =
+                                            Some("No provider for this message".to_string());
                                     }
                                 } else {
                                     // No decrypt params — the image is E2EE encrypted on the CDN
@@ -1096,13 +1213,15 @@ impl App {
                 let input = self.state.take_input();
                 if !input.is_empty() {
                     if let Some(chat_id) = self.state.selected_chat_id().map(|s| s.to_string()) {
-                        let platform = self.state.chats.iter()
+                        let platform = self
+                            .state
+                            .chats
+                            .iter()
                             .find(|c| c.id == chat_id)
                             .map(|c| c.platform)
                             .unwrap_or(Platform::Mock);
-                        self.state.schedule_prompt_state = Some(SchedulePromptState::new(
-                            input, chat_id, platform,
-                        ));
+                        self.state.schedule_prompt_state =
+                            Some(SchedulePromptState::new(input, chat_id, platform));
                         self.state.input_mode = InputMode::SchedulePrompt;
                     }
                 }
@@ -1110,8 +1229,12 @@ impl App {
             Action::ScheduleInput(key) => {
                 if let Some(ref mut sp) = self.state.schedule_prompt_state {
                     match key.code {
-                        KeyCode::Backspace => { sp.query.pop(); }
-                        KeyCode::Char(c) => { sp.query.push(c); }
+                        KeyCode::Backspace => {
+                            sp.query.pop();
+                        }
+                        KeyCode::Char(c) => {
+                            sp.query.push(c);
+                        }
                         _ => {}
                     }
                 }
@@ -1131,12 +1254,16 @@ impl App {
                         if let Err(e) = self.db.insert_scheduled_message(&msg) {
                             tracing::error!("Failed to schedule message: {}", e);
                         } else {
-                            self.state.schedule_status = Some(format!("Scheduled for {}", format_local_time(&send_at)));
+                            self.state.schedule_status =
+                                Some(format!("Scheduled for {}", format_local_time(&send_at)));
                             self.schedule_status_ticks = 0;
                             tracing::info!("Scheduled message for {}", format_local_time(&send_at));
                         }
                     } else {
-                        self.state.schedule_status = Some("Could not parse time — try 'tomorrow 9am' or 'Mar 15 14:30'".to_string());
+                        self.state.schedule_status = Some(
+                            "Could not parse time — try 'tomorrow 9am' or 'Mar 15 14:30'"
+                                .to_string(),
+                        );
                         self.schedule_status_ticks = 0;
                     }
                     self.state.input_mode = InputMode::Editing;
@@ -1152,17 +1279,15 @@ impl App {
                 }
                 self.state.input_mode = InputMode::Editing;
             }
-            Action::OpenScheduleList => {
-                match self.db.get_pending_scheduled_messages() {
-                    Ok(messages) => {
-                        self.state.schedule_list_state = Some(ScheduleListState::new(messages));
-                        self.state.input_mode = InputMode::ScheduleList;
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to load scheduled messages: {}", e);
-                    }
+            Action::OpenScheduleList => match self.db.get_pending_scheduled_messages() {
+                Ok(messages) => {
+                    self.state.schedule_list_state = Some(ScheduleListState::new(messages));
+                    self.state.input_mode = InputMode::ScheduleList;
                 }
-            }
+                Err(e) => {
+                    tracing::error!("Failed to load scheduled messages: {}", e);
+                }
+            },
             Action::ScheduleListNext => {
                 if let Some(ref mut sl) = self.state.schedule_list_state {
                     sl.select_next();
@@ -1226,7 +1351,9 @@ impl App {
                             TelegramAuthStage::Password => AuthInput::Password(value),
                         };
                         if tx.send(auth_input).is_err() {
-                            tracing::warn!("Telegram auth_tx send failed — receiver may have dropped");
+                            tracing::warn!(
+                                "Telegram auth_tx send failed — receiver may have dropped"
+                            );
                         }
                     }
                     // Close overlay; it will re-open if auth needs another step
@@ -1347,7 +1474,11 @@ impl App {
     }
 
     fn update_title(has_unread: bool) {
-        let title = if has_unread { "● zero-drift-chat" } else { "zero-drift-chat" };
+        let title = if has_unread {
+            "● zero-drift-chat"
+        } else {
+            "zero-drift-chat"
+        };
         let _ = execute!(io::stdout(), SetTitle(title));
     }
 

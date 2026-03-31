@@ -1,5 +1,8 @@
+# zero-drift-chat configuration
+# Edit manually or via in-app settings (s)
+
 [general]
-# data_dir = "~/.zero-drift-chat"
+data_dir = "/home/weibin/.zero-drift-chat"
 log_level = "info"
 
 [tui]
@@ -14,7 +17,6 @@ message_interval_secs = 3
 
 [whatsapp]
 enabled = true
-# phone_number = "+1234567890"
 
 [telegram]
 enabled = true
@@ -22,11 +24,11 @@ api_id = 30093522
 api_hash = "484eb075bba00e91b0a88a80ffef7656"
 
 [ai]
-enabled = true
+enabled = false
 provider = "ollama"
 base_url = "http://localhost:8080"
 model = "qwen2.5-1.5b-instruct-q4_k_m"
 context_messages = 10
 summary_threshold = 50
 debounce_ms = 500
-debug = true
+debug = false

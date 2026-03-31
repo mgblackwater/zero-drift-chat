@@ -8,10 +8,10 @@ use async_trait::async_trait;
 use futures::future::BoxFuture;
 use grammers_client::client::UpdatesConfiguration;
 use grammers_client::peer::Peer;
-use grammers_client::{Client, SenderPool, SignInError};
 use grammers_client::tl;
-use grammers_session::{Session, SessionData};
+use grammers_client::{Client, SenderPool, SignInError};
 use grammers_session::types::{ChannelKind, DcOption, PeerId, PeerInfo, UpdateState, UpdatesState};
+use grammers_session::{Session, SessionData};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
@@ -20,12 +20,40 @@ use crate::core::error::Result;
 use crate::core::provider::{MessagingProvider, ProviderEvent};
 use crate::core::types::*;
 
-use convert::{grammers_message_to_unified, peer_id_to_chat_id, PeerCache, ChatNameCache};
+use convert::{grammers_message_to_unified, peer_id_to_chat_id, ChatNameCache, PeerCache};
 
 use grammers_client::client::PasswordToken;
 
 const MAX_DIALOGS: usize = 200;
 const MAX_AUTH_RETRIES: u8 = 3;
+
+struct RunnerHandle(JoinHandle<()>);
+
+impl RunnerHandle {
+    fn abort(&mut self) {
+        self.0.abort();
+    }
+
+    async fn await_with_error_handling(&mut self) {
+        let handle = &mut self.0;
+        match handle.await {
+            Ok(()) => {}
+            Err(e) if e.is_panic() => {
+                tracing::error!(
+                    "Telegram MTProto runner panicked (upstream grammers bug): {:?}",
+                    e
+                );
+            }
+            Err(_cancelled) => {}
+        }
+    }
+}
+
+impl Drop for RunnerHandle {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
 
 /// Messages sent *into* the provider during interactive auth.
 pub enum AuthInput {
@@ -114,9 +142,7 @@ impl Session for PersistentSession {
     }
 
     fn peer(&self, peer: PeerId) -> BoxFuture<'_, Option<PeerInfo>> {
-        Box::pin(async move {
-            self.0.read().unwrap().peer_infos.get(&peer).cloned()
-        })
+        Box::pin(async move { self.0.read().unwrap().peer_infos.get(&peer).cloned() })
     }
 
     fn cache_peer(&self, peer: &PeerInfo) -> BoxFuture<'_, ()> {
@@ -362,6 +388,7 @@ impl TelegramProvider {
 
     /// Background task: connect, authenticate, fetch initial dialogs, then run the update loop.
     /// Called from within the tokio::spawn in `start()`.
+    #[allow(clippy::too_many_arguments)]
     async fn connect_and_run(
         api_id: i32,
         api_hash: String,
@@ -383,10 +410,11 @@ impl TelegramProvider {
 
         // 4. Spawn the network runner — this drives all MTProto I/O.
         //    We hold the runner in a task; `updates_rx` belongs to us.
+        //    RunnerHandle ensures the task is aborted if we exit early.
         let updates_rx = pool.updates;
-        let runner_handle = tokio::spawn(async move {
+        let mut runner_handle = RunnerHandle(tokio::spawn(async move {
             pool.runner.run().await;
-        });
+        }));
 
         // 5. Authenticate if not already logged in.
         match client.is_authorized().await {
@@ -451,10 +479,17 @@ impl TelegramProvider {
             });
             let kind = match peer {
                 Peer::User(u) if u.is_bot() => ChatKind::Bot,
-                Peer::User(_)               => ChatKind::Chat,
-                Peer::Group(_)              => ChatKind::Group,
-                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup | ChannelKind::Gigagroup)) => ChatKind::Group,
-                Peer::Channel(_)            => ChatKind::Channel,
+                Peer::User(_) => ChatKind::Chat,
+                Peer::Group(_) => ChatKind::Group,
+                Peer::Channel(c)
+                    if matches!(
+                        c.kind(),
+                        Some(ChannelKind::Megagroup | ChannelKind::Gigagroup)
+                    ) =>
+                {
+                    ChatKind::Group
+                }
+                Peer::Channel(_) => ChatKind::Channel,
             };
 
             chats.push(UnifiedChat {
@@ -529,27 +564,32 @@ impl TelegramProvider {
                         .unwrap_or_else(|| "tg-unknown".to_string());
 
                     // Re-fetch the message by ID to get the full text.
-                    let full_msg: Option<grammers_client::message::Message> =
-                        if let Some(peer_ref) = peer_cache.get(&chat_id) {
-                            match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
-                                Ok(mut msgs) => msgs.pop().flatten(),
-                                Err(e) => {
-                                    tracing::warn!(
+                    let full_msg: Option<grammers_client::message::Message> = if let Some(
+                        peer_ref,
+                    ) =
+                        peer_cache.get(&chat_id)
+                    {
+                        match client.get_messages_by_id(peer_ref, &[msg.id()]).await {
+                            Ok(mut msgs) => msgs.pop().flatten(),
+                            Err(e) => {
+                                tracing::warn!(
                                         "get_messages_by_id failed for msg {}: {}; using update payload",
                                         msg.id(), e
                                     );
-                                    None
-                                }
+                                None
                             }
-                        } else {
-                            None
-                        };
+                        }
+                    } else {
+                        None
+                    };
 
                     let effective_msg: &grammers_client::message::Message =
                         full_msg.as_ref().unwrap_or(&msg);
 
                     let fallback = chat_name_cache.get(&chat_id);
-                    if let Some(unified) = grammers_message_to_unified(effective_msg, &chat_id, fallback.as_deref()) {
+                    if let Some(unified) =
+                        grammers_message_to_unified(effective_msg, &chat_id, fallback.as_deref())
+                    {
                         tracing::debug!(
                             chat_id = %chat_id,
                             msg_id = %effective_msg.id(),
@@ -574,26 +614,7 @@ impl TelegramProvider {
 
         // 10. Clean up runner.
         runner_handle.abort();
-        match runner_handle.await {
-            Ok(()) => {}
-            Err(e) if e.is_panic() => {
-                // The upstream `grammers` library contains a known panic in its
-                // MTProto update-difference state machine (grammers-session/src/
-                // message_box/mod.rs). Surface it as a structured error rather than
-                // letting it silently kill the task.
-                tracing::error!(
-                    "Telegram MTProto runner panicked (upstream grammers bug): {:?}",
-                    e
-                );
-                return Err(anyhow::anyhow!(
-                    "Telegram MTProto runner panicked (upstream grammers bug): {:?}",
-                    e
-                ));
-            }
-            Err(_cancelled) => {
-                // Task was aborted — expected, not an error.
-            }
-        }
+        runner_handle.await_with_error_handling().await;
         Ok(())
     }
 }
@@ -622,7 +643,14 @@ impl MessagingProvider for TelegramProvider {
         // start() returns immediately and the TUI can draw before auth is needed.
         let connect_handle = tokio::spawn(async move {
             match Self::connect_and_run(
-                api_id, api_hash, session_path, peer_cache, chat_name_cache, client_slot, auth_rx, tx.clone(),
+                api_id,
+                api_hash,
+                session_path,
+                peer_cache,
+                chat_name_cache,
+                client_slot,
+                auth_rx,
+                tx.clone(),
             )
             .await
             {
@@ -688,7 +716,10 @@ impl MessagingProvider for TelegramProvider {
     }
 
     async fn get_chats(&self) -> Result<Vec<UnifiedChat>> {
-        let client = self.client.lock().await
+        let client = self
+            .client
+            .lock()
+            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
@@ -729,10 +760,17 @@ impl MessagingProvider for TelegramProvider {
 
             let kind = match peer {
                 Peer::User(u) if u.is_bot() => ChatKind::Bot,
-                Peer::User(_)               => ChatKind::Chat,
-                Peer::Group(_)              => ChatKind::Group,
-                Peer::Channel(c) if matches!(c.kind(), Some(ChannelKind::Megagroup | ChannelKind::Gigagroup)) => ChatKind::Group,
-                Peer::Channel(_)            => ChatKind::Channel,
+                Peer::User(_) => ChatKind::Chat,
+                Peer::Group(_) => ChatKind::Group,
+                Peer::Channel(c)
+                    if matches!(
+                        c.kind(),
+                        Some(ChannelKind::Megagroup | ChannelKind::Gigagroup)
+                    ) =>
+                {
+                    ChatKind::Group
+                }
+                Peer::Channel(_) => ChatKind::Channel,
             };
 
             chats.push(UnifiedChat {
@@ -752,7 +790,10 @@ impl MessagingProvider for TelegramProvider {
     }
 
     async fn get_messages(&self, chat_id: &str) -> Result<Vec<UnifiedMessage>> {
-        let client = self.client.lock().await
+        let client = self
+            .client
+            .lock()
+            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
@@ -788,7 +829,10 @@ impl MessagingProvider for TelegramProvider {
     }
 
     async fn mark_as_read(&self, chat_id: &str, _msg_ids: Vec<String>) -> Result<()> {
-        let client = self.client.lock().await
+        let client = self
+            .client
+            .lock()
+            .await
             .clone()
             .ok_or_else(|| anyhow::anyhow!("Telegram client not started"))?;
 
