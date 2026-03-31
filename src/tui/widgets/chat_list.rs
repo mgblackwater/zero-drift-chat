@@ -55,7 +55,11 @@ fn make_item(chat: &UnifiedChat, is_selected: bool, typing_blink: Option<u8>) ->
 
     let spans = if let Some(phase) = typing_blink {
         let dot = |i: u8| {
-            let color = if phase == i { Color::Green } else { Color::DarkGray };
+            let color = if phase == i {
+                Color::Green
+            } else {
+                Color::DarkGray
+            };
             Span::styled("● ", Style::default().fg(color))
         };
         vec![
@@ -82,6 +86,7 @@ fn make_item(chat: &UnifiedChat, is_selected: bool, typing_blink: Option<u8>) ->
     ListItem::new(Line::from(spans))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_chat_list(
     f: &mut Frame,
     area: Rect,
@@ -92,9 +97,9 @@ pub fn render_chat_list(
     typing_states: &HashMap<String, TypingInfo>,
     blink_phase: u8,
     activity_cache: &HashMap<String, [u32; 24]>,
+    show_activity_graph: bool,
 ) {
-    // Wide-screen: split off a 12-col graph column on the right
-    let (list_area, graph_area_opt) = if area.width >= 100 {
+    let (list_area, graph_area_opt) = if show_activity_graph {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -215,16 +220,12 @@ pub fn render_chat_list(
     if let Some(graph_area) = graph_area_opt {
         use crate::storage::activity::encode_braille;
 
-        let mut graph_lines: Vec<Line> = vec![
-            Line::from(vec![
-                Span::styled(" 24h       ", Style::default().fg(Color::DarkGray)),
-            ]),
-        ];
+        let mut graph_lines: Vec<Line> = vec![Line::from(vec![Span::styled(
+            " 24h       ",
+            Style::default().fg(Color::DarkGray),
+        )])];
         for chat in chats.iter() {
-            let arr = activity_cache
-                .get(&chat.id)
-                .copied()
-                .unwrap_or([0u32; 24]);
+            let arr = activity_cache.get(&chat.id).copied().unwrap_or([0u32; 24]);
             let braille = encode_braille(&arr);
             let color = if chat.unread_count > 0 {
                 Color::Green

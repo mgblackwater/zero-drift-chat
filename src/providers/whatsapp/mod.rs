@@ -67,16 +67,17 @@ impl MessagingProvider for WhatsAppProvider {
             .map_err(|e| anyhow::anyhow!("Failed to create WhatsApp SQLite backend: {}", e))?;
         let backend = Arc::new(backend);
 
-        tracing::info!("WhatsApp SQLite backend initialized at {}", self.session_db_path);
+        tracing::info!(
+            "WhatsApp SQLite backend initialized at {}",
+            self.session_db_path
+        );
 
         let transport_factory = TokioWebSocketTransportFactory::new();
         let http_client = UreqHttpClient::new();
 
         let tx_events = tx.clone();
-        let jid_cache = JidCache::new_with_mappings(
-            std::mem::take(&mut self.initial_lid_mappings),
-            tx.clone(),
-        );
+        let jid_cache =
+            JidCache::new_with_mappings(std::mem::take(&mut self.initial_lid_mappings), tx.clone());
         let jid_cache_clone = jid_cache.clone();
 
         let mut bot = Bot::builder()

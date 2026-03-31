@@ -125,12 +125,15 @@ fn split_line_with_urls(line: &str) -> Vec<(&str, bool)> {
     result
 }
 
-
 /// Build content spans for a single pre-wrapped line with optional URL styling.
 /// `is_selected`: adds blue background when true.
 /// `text_color`: base message text color.
 fn build_content_spans(line: &str, is_selected: bool, text_color: Color) -> Vec<Span<'static>> {
-    let bg = if is_selected { Color::Blue } else { Color::Black };
+    let bg = if is_selected {
+        Color::Blue
+    } else {
+        Color::Black
+    };
     let url_style = Style::default()
         .fg(Color::LightBlue)
         .add_modifier(Modifier::UNDERLINED)
@@ -278,8 +281,14 @@ pub fn render_message_view(
                 let header_line = if is_selected {
                     Line::from(vec![
                         Span::raw(" ".repeat(pad)),
-                        Span::styled(sender_display.clone(), Style::default().bg(Color::Blue).fg(Color::Cyan)),
-                        Span::styled(format!(" {}", time), Style::default().bg(Color::Blue).fg(Color::DarkGray)),
+                        Span::styled(
+                            sender_display.clone(),
+                            Style::default().bg(Color::Blue).fg(Color::Cyan),
+                        ),
+                        Span::styled(
+                            format!(" {}", time),
+                            Style::default().bg(Color::Blue).fg(Color::DarkGray),
+                        ),
                         Span::styled(" ▐", Style::default().fg(Color::Cyan).bg(Color::Blue)),
                     ])
                 } else {
@@ -302,17 +311,27 @@ pub fn render_message_view(
             for (li, text_line) in all_wrapped.iter().enumerate() {
                 let is_last = li == total - 1;
                 let line_w = UnicodeWidthStr::width(text_line.as_str());
-                let mut spans: Vec<Span> = build_content_spans(text_line, is_selected, Color::White);
+                let mut spans: Vec<Span> =
+                    build_content_spans(text_line, is_selected, Color::White);
                 if is_last {
                     let status_w = display_width_of_status(msg.status);
                     let pad = area_w.saturating_sub(line_w + 2 + 1 + status_w);
                     let mut row: Vec<Span> = vec![Span::raw(" ".repeat(pad))];
                     row.append(&mut spans);
-                    row.push(Span::styled(" ┃", Style::default().fg(Color::Cyan).bg(if is_selected { Color::Blue } else { Color::Black })));
+                    row.push(Span::styled(
+                        " ┃",
+                        Style::default().fg(Color::Cyan).bg(if is_selected {
+                            Color::Blue
+                        } else {
+                            Color::Black
+                        }),
+                    ));
                     row.push(Span::raw(" "));
                     row.push({
                         let mut s = status_span(msg.status);
-                        if is_selected { s = s.patch_style(Style::default().bg(Color::Blue)); }
+                        if is_selected {
+                            s = s.patch_style(Style::default().bg(Color::Blue));
+                        }
                         s
                     });
                     lines.push(Line::from(row));
@@ -320,23 +339,44 @@ pub fn render_message_view(
                     let pad = area_w.saturating_sub(line_w + 2);
                     let mut row: Vec<Span> = vec![Span::raw(" ".repeat(pad))];
                     row.append(&mut spans);
-                    row.push(Span::styled(" ┃", Style::default().fg(Color::Cyan).bg(if is_selected { Color::Blue } else { Color::Black })));
+                    row.push(Span::styled(
+                        " ┃",
+                        Style::default().fg(Color::Cyan).bg(if is_selected {
+                            Color::Blue
+                        } else {
+                            Color::Black
+                        }),
+                    ));
                     lines.push(Line::from(row));
                 }
             }
         } else {
             // ── Incoming: left-aligned, purple ┃ ─────────────────────────────
             let is_new = new_start_idx.map(|s| i >= s).unwrap_or(false);
-            let name_color = if is_new { Color::Yellow } else { Color::Magenta };
-            let bar_color = if is_new { Color::Yellow } else { Color::Magenta };
+            let name_color = if is_new {
+                Color::Yellow
+            } else {
+                Color::Magenta
+            };
+            let bar_color = if is_new {
+                Color::Yellow
+            } else {
+                Color::Magenta
+            };
             let msg_color = if is_new { Color::White } else { Color::Gray };
 
             if is_group_start {
                 let header_line = if is_selected {
                     Line::from(vec![
                         Span::styled("▌ ", Style::default().fg(Color::Cyan).bg(Color::Blue)),
-                        Span::styled(sender_display.clone(), Style::default().fg(name_color).bg(Color::Blue)),
-                        Span::styled(format!(" {}", time), Style::default().fg(Color::DarkGray).bg(Color::Blue)),
+                        Span::styled(
+                            sender_display.clone(),
+                            Style::default().fg(name_color).bg(Color::Blue),
+                        ),
+                        Span::styled(
+                            format!(" {}", time),
+                            Style::default().fg(Color::DarkGray).bg(Color::Blue),
+                        ),
                     ])
                 } else {
                     Line::from(vec![
@@ -564,8 +604,14 @@ mod tests {
         assert_eq!(status_span(MessageStatus::Delivered).content.as_ref(), "✓✓");
         assert_eq!(status_span(MessageStatus::Read).content.as_ref(), "✓✓");
         assert_eq!(status_span(MessageStatus::Failed).content.as_ref(), "✗");
-        assert_eq!(status_span(MessageStatus::Read).style.fg, Some(Color::Green));
-        assert_eq!(status_span(MessageStatus::Failed).style.fg, Some(Color::Red));
+        assert_eq!(
+            status_span(MessageStatus::Read).style.fg,
+            Some(Color::Green)
+        );
+        assert_eq!(
+            status_span(MessageStatus::Failed).style.fg,
+            Some(Color::Red)
+        );
     }
 
     #[test]

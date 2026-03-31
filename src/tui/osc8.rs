@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crossterm::{cursor::MoveTo, style::Print, execute};
+use crossterm::{cursor::MoveTo, execute, style::Print};
 use ratatui::{buffer::Buffer, style::Color};
 
 /// After `terminal.draw()` flushes, scan the completed buffer for contiguous

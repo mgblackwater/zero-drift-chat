@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::tui::app_state::InputMode;
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_status_bar(
     f: &mut Frame,
     area: Rect,

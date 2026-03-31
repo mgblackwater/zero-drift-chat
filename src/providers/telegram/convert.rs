@@ -43,7 +43,10 @@ impl ChatNameCache {
     }
 
     pub fn insert(&self, chat_id: &str, name: &str) {
-        self.inner.lock().unwrap().insert(chat_id.to_string(), name.to_string());
+        self.inner
+            .lock()
+            .unwrap()
+            .insert(chat_id.to_string(), name.to_string());
     }
 
     pub fn get(&self, chat_id: &str) -> Option<String> {

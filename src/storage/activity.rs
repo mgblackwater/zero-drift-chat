@@ -69,7 +69,7 @@ pub fn query_activity_24h(db: &Database, chat_ids: &[&str]) -> HashMap<String, [
     match query_result {
         Ok(triples) => {
             for (chat_id, hours_ago, cnt) in triples {
-                if hours_ago < 0 || hours_ago > 23 {
+                if !(0..=23).contains(&hours_ago) {
                     continue;
                 }
                 let slot = 23 - hours_ago as usize;
@@ -154,10 +154,12 @@ mod tests {
         let db = Database::open_in_memory().expect("in-memory db");
 
         // Insert a chat row first (messages has a FK to chats)
-        db.conn.execute(
-            "INSERT INTO chats (id, platform, name) VALUES ('chat_a', 'test', 'Chat A')",
-            [],
-        ).expect("insert chat_a");
+        db.conn
+            .execute(
+                "INSERT INTO chats (id, platform, name) VALUES ('chat_a', 'test', 'Chat A')",
+                [],
+            )
+            .expect("insert chat_a");
 
         // Insert 3 messages in the current hour (hours_ago = 0, should go to slot 23)
         for i in 0..3 {
@@ -189,38 +191,56 @@ mod tests {
         let db = Database::open_in_memory().expect("in-memory db");
 
         // Insert chat rows first
-        db.conn.execute(
-            "INSERT INTO chats (id, platform, name) VALUES ('chat_a', 'test', 'Chat A')",
-            [],
-        ).expect("insert chat_a");
-        db.conn.execute(
-            "INSERT INTO chats (id, platform, name) VALUES ('chat_b', 'test', 'Chat B')",
-            [],
-        ).expect("insert chat_b");
+        db.conn
+            .execute(
+                "INSERT INTO chats (id, platform, name) VALUES ('chat_a', 'test', 'Chat A')",
+                [],
+            )
+            .expect("insert chat_a");
+        db.conn
+            .execute(
+                "INSERT INTO chats (id, platform, name) VALUES ('chat_b', 'test', 'Chat B')",
+                [],
+            )
+            .expect("insert chat_b");
 
         // Insert 2 messages for chat_a and 1 for chat_b
-        db.conn.execute(
-            "INSERT INTO messages (id, chat_id, platform, sender, content, timestamp, status)
+        db.conn
+            .execute(
+                "INSERT INTO messages (id, chat_id, platform, sender, content, timestamp, status)
              VALUES ('a1', 'chat_a', 'test', 'user', 'hi',
                      strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'delivered')",
-            [],
-        ).expect("insert a1");
-        db.conn.execute(
-            "INSERT INTO messages (id, chat_id, platform, sender, content, timestamp, status)
+                [],
+            )
+            .expect("insert a1");
+        db.conn
+            .execute(
+                "INSERT INTO messages (id, chat_id, platform, sender, content, timestamp, status)
              VALUES ('a2', 'chat_a', 'test', 'user', 'hi',
                      strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 minutes'), 'delivered')",
-            [],
-        ).expect("insert a2");
-        db.conn.execute(
-            "INSERT INTO messages (id, chat_id, platform, sender, content, timestamp, status)
+                [],
+            )
+            .expect("insert a2");
+        db.conn
+            .execute(
+                "INSERT INTO messages (id, chat_id, platform, sender, content, timestamp, status)
              VALUES ('b1', 'chat_b', 'test', 'user', 'hi',
                      strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), 'delivered')",
-            [],
-        ).expect("insert b1");
+                [],
+            )
+            .expect("insert b1");
 
         let result = query_activity_24h(&db, &["chat_a", "chat_b"]);
 
-        assert_eq!(result.get("chat_a").map(|a| a[23]), Some(2), "chat_a should have 2 in slot 23");
-        assert_eq!(result.get("chat_b").map(|a| a[23]), Some(1), "chat_b should have 1 in slot 23");
+        assert_eq!(
+            result.get("chat_a").map(|a| a[23]),
+            Some(2),
+            "chat_a should have 2 in slot 23"
+        );
+        assert_eq!(
+            result.get("chat_b").map(|a| a[23]),
+            Some(1),
+            "chat_b should have 1 in slot 23"
+        );
     }
 }

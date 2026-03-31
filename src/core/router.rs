@@ -4,6 +4,8 @@ use super::error::Result;
 use super::provider::{MessagingProvider, ProviderEvent};
 use super::types::Platform;
 
+const EVENT_CHANNEL_WARN_THRESHOLD: usize = 1000;
+
 pub struct MessageRouter {
     providers: Vec<Box<dyn MessagingProvider>>,
     tx: mpsc::UnboundedSender<ProviderEvent>,
@@ -37,6 +39,14 @@ impl MessageRouter {
         while let Ok(event) = self.rx.try_recv() {
             events.push(event);
         }
+        if events.len() > EVENT_CHANNEL_WARN_THRESHOLD {
+            tracing::warn!(
+                "MessageRouter event channel has {} unprocessed events (threshold: {}). \
+                 Consider calling poll_events() more frequently.",
+                events.len(),
+                EVENT_CHANNEL_WARN_THRESHOLD
+            );
+        }
         events
     }
 
@@ -48,10 +58,11 @@ impl MessageRouter {
             .map(|p| p.as_ref())
     }
 
-    pub fn get_provider_mut(&mut self, platform: Platform) -> Option<&mut Box<dyn MessagingProvider>> {
-        self.providers
-            .iter_mut()
-            .find(|p| p.platform() == platform)
+    pub fn get_provider_mut(
+        &mut self,
+        platform: Platform,
+    ) -> Option<&mut Box<dyn MessagingProvider>> {
+        self.providers.iter_mut().find(|p| p.platform() == platform)
     }
 
     pub async fn stop_all(&mut self) -> Result<()> {

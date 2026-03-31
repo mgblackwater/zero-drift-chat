@@ -1,10 +1,10 @@
+mod ai;
 mod app;
 mod config;
 mod core;
 mod providers;
 mod storage;
 mod tui;
-mod ai;
 
 use std::path::PathBuf;
 
@@ -16,7 +16,11 @@ use crate::storage::{AddressBook, Database};
 use crate::tui::event::EventHandler;
 
 #[derive(Parser, Debug)]
-#[command(name = "zero-drift-chat", version, about = "Zero-drift chat — a privacy-first terminal messenger")]
+#[command(
+    name = "zero-drift-chat",
+    version,
+    about = "Zero-drift chat — a privacy-first terminal messenger"
+)]
 struct Cli {
     /// Path to config file
     #[arg(short, long)]
@@ -120,7 +124,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Run app
     let event_handler = EventHandler::new(config.tui.tick_rate_ms, config.tui.render_rate_ms);
-    let mut app = App::new(config, db, address_book, config_path, event_handler.sender());
+    let mut app = App::new(
+        config,
+        db,
+        address_book,
+        config_path,
+        event_handler.sender(),
+    );
     app.run(event_handler).await?;
 
     tracing::info!("zero-drift-chat exited cleanly");

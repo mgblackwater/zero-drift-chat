@@ -41,7 +41,11 @@ pub fn build_context(
     let start = messages.len().saturating_sub(last_n);
     for msg in &messages[start..] {
         ctx.push(ContextMessage {
-            role: if msg.is_outgoing { MessageRole::User } else { MessageRole::Assistant },
+            role: if msg.is_outgoing {
+                MessageRole::User
+            } else {
+                MessageRole::Assistant
+            },
             content: msg.text.clone(),
         });
     }
@@ -56,8 +60,14 @@ mod tests {
     #[test]
     fn builds_context_from_messages() {
         let messages = vec![
-            RawMessage { is_outgoing: true,  text: "hey".to_string() },
-            RawMessage { is_outgoing: false, text: "yo".to_string() },
+            RawMessage {
+                is_outgoing: true,
+                text: "hey".to_string(),
+            },
+            RawMessage {
+                is_outgoing: false,
+                text: "yo".to_string(),
+            },
         ];
         let ctx = build_context(&messages, None, 10);
         assert_eq!(ctx.len(), 2);
@@ -67,10 +77,12 @@ mod tests {
 
     #[test]
     fn limits_to_last_n() {
-        let messages: Vec<RawMessage> = (0..20).map(|i| RawMessage {
-            is_outgoing: i % 2 == 0,
-            text: format!("msg {}", i),
-        }).collect();
+        let messages: Vec<RawMessage> = (0..20)
+            .map(|i| RawMessage {
+                is_outgoing: i % 2 == 0,
+                text: format!("msg {}", i),
+            })
+            .collect();
         let ctx = build_context(&messages, None, 5);
         assert_eq!(ctx.len(), 5);
         assert_eq!(ctx.last().unwrap().to_chat_line(), "[Them]: msg 19");
@@ -78,9 +90,10 @@ mod tests {
 
     #[test]
     fn prepends_summary_as_first_message() {
-        let messages = vec![
-            RawMessage { is_outgoing: true, text: "hi".to_string() },
-        ];
+        let messages = vec![RawMessage {
+            is_outgoing: true,
+            text: "hi".to_string(),
+        }];
         let ctx = build_context(&messages, Some("Chat about cats"), 10);
         assert_eq!(ctx.len(), 2);
         assert!(matches!(ctx[0].role, MessageRole::Assistant));

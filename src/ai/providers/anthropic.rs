@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -13,7 +13,10 @@ pub struct AnthropicClient {
 
 impl AnthropicClient {
     pub fn new(api_key: Option<String>) -> Self {
-        Self { api_key, client: reqwest::Client::new() }
+        Self {
+            api_key,
+            client: reqwest::Client::new(),
+        }
     }
 }
 
@@ -44,24 +47,33 @@ struct AnthropicContent {
 #[async_trait]
 impl AiProvider for AnthropicClient {
     async fn complete(&self, req: CompletionRequest, cancel: CancellationToken) -> Result<String> {
-        let api_key = self.api_key.as_deref()
+        let api_key = self
+            .api_key
+            .as_deref()
             .filter(|k| !k.is_empty())
             .ok_or_else(|| anyhow!("Anthropic API key not configured"))?;
 
-        let mut messages: Vec<AnthropicMessage> = req.context.iter().map(|m| {
-            let role = match m.role {
-                MessageRole::User => "user",
-                MessageRole::Assistant => "assistant",
-            };
-            AnthropicMessage {
-                role: role.to_string(),
-                content: m.content.clone(),
-            }
-        }).collect();
+        let mut messages: Vec<AnthropicMessage> = req
+            .context
+            .iter()
+            .map(|m| {
+                let role = match m.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "assistant",
+                };
+                AnthropicMessage {
+                    role: role.to_string(),
+                    content: m.content.clone(),
+                }
+            })
+            .collect();
 
         messages.push(AnthropicMessage {
             role: "user".to_string(),
-            content: format!("Complete this message (reply with ONLY the completion): {}", req.partial_input),
+            content: format!(
+                "Complete this message (reply with ONLY the completion): {}",
+                req.partial_input
+            ),
         });
 
         let body = AnthropicRequest {
@@ -71,7 +83,8 @@ impl AiProvider for AnthropicClient {
             messages,
         };
 
-        let request = self.client
+        let request = self
+            .client
             .post("https://api.anthropic.com/v1/messages")
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")

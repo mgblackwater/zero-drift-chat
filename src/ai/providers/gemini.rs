@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -13,7 +13,10 @@ pub struct GeminiClient {
 
 impl GeminiClient {
     pub fn new(api_key: Option<String>) -> Self {
-        Self { api_key, client: reqwest::Client::new() }
+        Self {
+            api_key,
+            client: reqwest::Client::new(),
+        }
     }
 }
 
@@ -71,34 +74,49 @@ struct GeminiResponsePart {
 #[async_trait]
 impl AiProvider for GeminiClient {
     async fn complete(&self, req: CompletionRequest, cancel: CancellationToken) -> Result<String> {
-        let api_key = self.api_key.as_deref()
+        let api_key = self
+            .api_key
+            .as_deref()
             .filter(|k| !k.is_empty())
             .ok_or_else(|| anyhow!("Gemini API key not configured"))?;
 
-        let mut contents: Vec<GeminiContent> = req.context.iter().map(|m| {
-            let role = match m.role {
-                MessageRole::User => "user",
-                MessageRole::Assistant => "model",
-            };
-            GeminiContent {
-                role: role.to_string(),
-                parts: vec![GeminiPart { text: m.content.clone() }],
-            }
-        }).collect();
+        let mut contents: Vec<GeminiContent> = req
+            .context
+            .iter()
+            .map(|m| {
+                let role = match m.role {
+                    MessageRole::User => "user",
+                    MessageRole::Assistant => "model",
+                };
+                GeminiContent {
+                    role: role.to_string(),
+                    parts: vec![GeminiPart {
+                        text: m.content.clone(),
+                    }],
+                }
+            })
+            .collect();
 
         contents.push(GeminiContent {
             role: "user".to_string(),
             parts: vec![GeminiPart {
-                text: format!("Complete this message (reply with ONLY the completion): {}", req.partial_input),
+                text: format!(
+                    "Complete this message (reply with ONLY the completion): {}",
+                    req.partial_input
+                ),
             }],
         });
 
         let body = GeminiRequest {
             system_instruction: GeminiSystemInstruction {
-                parts: vec![GeminiPart { text: req.system.clone() }],
+                parts: vec![GeminiPart {
+                    text: req.system.clone(),
+                }],
             },
             contents,
-            generation_config: GeminiGenerationConfig { max_output_tokens: 80 },
+            generation_config: GeminiGenerationConfig {
+                max_output_tokens: 80,
+            },
         };
 
         let url = format!(

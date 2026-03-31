@@ -23,7 +23,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
 
     let body_layout = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(30), Constraint::Min(1)])
+        .constraints([Constraint::Percentage(20), Constraint::Min(1)])
         .split(body);
 
     let chat_list_area = body_layout[0];
@@ -63,6 +63,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         &state.typing_states,
         state.blink_phase,
         &state.activity_cache,
+        state.show_activity_graph,
     );
 
     message_view::render_message_view(

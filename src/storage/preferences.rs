@@ -3,9 +3,9 @@ use crate::storage::db::Database;
 
 impl Database {
     pub fn get_preference(&self, key: &str) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT value FROM preferences WHERE key = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM preferences WHERE key = ?1")?;
         let mut rows = stmt.query(rusqlite::params![key])?;
         if let Some(row) = rows.next()? {
             Ok(Some(row.get(0)?))

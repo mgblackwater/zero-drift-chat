@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -38,9 +38,9 @@ pub trait AiProvider: Send + Sync {
     fn clone_box(&self) -> Box<dyn AiProvider>;
 }
 
-pub mod openai;
 pub mod anthropic;
 pub mod gemini;
+pub mod openai;
 
 #[cfg(test)]
 mod tests {
@@ -48,13 +48,19 @@ mod tests {
 
     #[test]
     fn context_message_display_outgoing() {
-        let msg = ContextMessage { role: MessageRole::User, content: "hello".to_string() };
+        let msg = ContextMessage {
+            role: MessageRole::User,
+            content: "hello".to_string(),
+        };
         assert_eq!(msg.to_chat_line(), "[You]: hello");
     }
 
     #[test]
     fn context_message_display_incoming() {
-        let msg = ContextMessage { role: MessageRole::Assistant, content: "hi".to_string() };
+        let msg = ContextMessage {
+            role: MessageRole::Assistant,
+            content: "hi".to_string(),
+        };
         assert_eq!(msg.to_chat_line(), "[Them]: hi");
     }
 }

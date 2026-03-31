@@ -11,8 +11,7 @@ use crate::storage::ScheduledMessage;
 /// Tracks a contact who is currently typing in a chat.
 #[derive(Debug, Clone)]
 pub struct TypingInfo {
-    /// Stored for future use (e.g. "Alice is typing" in group chats).
-    /// Currently unused by the renderer, which shows a generic " typing" label.
+    #[allow(dead_code)]
     pub user_name: String,
     pub expires_at: Instant,
 }
@@ -39,6 +38,7 @@ pub enum SettingsKey {
     WhatsAppEnabled,
     LogLevel,
     EnterSends,
+    ActivityGraph,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +95,11 @@ impl SettingsState {
                     key: SettingsKey::EnterSends,
                     label: "Enter to Send".to_string(),
                     value: SettingsValue::Bool(enter_sends),
+                },
+                SettingsItem {
+                    key: SettingsKey::ActivityGraph,
+                    label: "Activity Graph".to_string(),
+                    value: SettingsValue::Bool(true),
                 },
             ],
             selected: 0,
@@ -347,6 +352,7 @@ pub struct AppState {
     pub ai_debug: bool,
     pub ai_debug_log: Vec<String>,
     pub enter_sends: bool,
+    pub show_activity_graph: bool,
     /// Number of unread messages at the tail of `messages` when a chat was opened.
     pub new_message_count: usize,
     /// Transient copy feedback: Some("Copied!") briefly after y is pressed.
@@ -393,6 +399,7 @@ impl AppState {
             ai_debug: false,
             ai_debug_log: Vec::new(),
             enter_sends: true,
+            show_activity_graph: true,
             new_message_count: 0,
             copy_status: None,
             selected_message_idx: None,
@@ -479,8 +486,21 @@ impl AppState {
         self.scroll_offset = self.scroll_offset.saturating_sub(3);
     }
 
-    pub fn open_settings(&mut self, config: &AppConfig, enter_sends: bool) {
-        self.settings_state = Some(SettingsState::from_config(config, enter_sends));
+    pub fn open_settings(
+        &mut self,
+        config: &AppConfig,
+        enter_sends: bool,
+        show_activity_graph: bool,
+    ) {
+        let mut s = SettingsState::from_config(config, enter_sends);
+        if let Some(item) = s
+            .items
+            .iter_mut()
+            .find(|i| i.key == SettingsKey::ActivityGraph)
+        {
+            item.value = SettingsValue::Bool(show_activity_graph);
+        }
+        self.settings_state = Some(s);
         self.input_mode = InputMode::Settings;
     }
 
@@ -599,8 +619,14 @@ mod tests {
             expires_at: Instant::now() + Duration::from_secs(5),
         };
         let now = Instant::now();
-        assert!(expired.expires_at <= now, "expired entry should be in the past");
-        assert!(active.expires_at > now, "active entry should be in the future");
+        assert!(
+            expired.expires_at <= now,
+            "expired entry should be in the past"
+        );
+        assert!(
+            active.expires_at > now,
+            "active entry should be in the future"
+        );
     }
 
     #[test]

@@ -31,7 +31,13 @@ impl EventHandler {
     /// Call [`start`] after `enable_raw_mode()` to begin reading terminal events.
     pub fn new(tick_rate_ms: u64, render_rate_ms: u64) -> Self {
         let (tx, rx) = mpsc::unbounded_channel::<AppEvent>();
-        Self { rx, tx, tick_rate_ms, render_rate_ms, _task: None }
+        Self {
+            rx,
+            tx,
+            tick_rate_ms,
+            render_rate_ms,
+            _task: None,
+        }
     }
 
     /// Spawn the background task that reads terminal events via `EventStream`.
@@ -44,10 +50,8 @@ impl EventHandler {
 
         let task = tokio::spawn(async move {
             let mut reader = EventStream::new();
-            let mut tick_interval =
-                tokio::time::interval(Duration::from_millis(tick_rate_ms));
-            let mut render_interval =
-                tokio::time::interval(Duration::from_millis(render_rate_ms));
+            let mut tick_interval = tokio::time::interval(Duration::from_millis(tick_rate_ms));
+            let mut render_interval = tokio::time::interval(Duration::from_millis(render_rate_ms));
 
             loop {
                 tokio::select! {
@@ -98,5 +102,13 @@ impl EventHandler {
 
     pub fn sender(&self) -> mpsc::UnboundedSender<AppEvent> {
         self.tx.clone()
+    }
+}
+
+impl Drop for EventHandler {
+    fn drop(&mut self) {
+        if let Some(task) = self._task.take() {
+            task.abort();
+        }
     }
 }

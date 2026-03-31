@@ -11,6 +11,8 @@ pub struct AiWorker {
     config: AiConfig,
     event_tx: mpsc::UnboundedSender<AppEvent>,
     cancel_token: Option<CancellationToken>,
+    summary_handles: Vec<tokio::task::JoinHandle<()>>,
+    shutdown_token: CancellationToken,
 }
 
 pub struct AiRequest {
@@ -25,13 +27,30 @@ impl AiWorker {
         config: AiConfig,
         event_tx: mpsc::UnboundedSender<AppEvent>,
     ) -> Self {
-        Self { provider, config, event_tx, cancel_token: None }
+        Self {
+            provider,
+            config,
+            event_tx,
+            cancel_token: None,
+            summary_handles: Vec::new(),
+            shutdown_token: CancellationToken::new(),
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        self.shutdown_token.cancel();
+        for handle in self.summary_handles.drain(..) {
+            handle.abort();
+        }
+        if let Some(token) = self.cancel_token.take() {
+            token.cancel();
+        }
     }
 
     /// If messages exceed the threshold, asynchronously generate a summary
     /// and send the (key, value) pair to be stored in preferences DB.
     pub fn maybe_generate_summary(
-        &self,
+        &mut self,
         chat_id: String,
         messages: Vec<crate::ai::context::RawMessage>,
         threshold: usize,
@@ -43,11 +62,12 @@ impl AiWorker {
 
         let provider = self.provider.clone_box();
         let model = self.config.model.clone();
+        let cancel = self.shutdown_token.clone();
 
-        tokio::spawn(async move {
-            // Summarise the older portion (everything except the last threshold/2 messages)
+        let handle = tokio::spawn(async move {
             let keep_recent = threshold / 2;
-            let older: Vec<String> = messages.iter()
+            let older: Vec<String> = messages
+                .iter()
                 .take(messages.len().saturating_sub(keep_recent))
                 .map(|m| m.to_chat_line_owned())
                 .collect();
@@ -68,7 +88,9 @@ impl AiWorker {
                 partial_input: prompt,
             };
 
-            let cancel = tokio_util::sync::CancellationToken::new();
+            if cancel.is_cancelled() {
+                return;
+            }
             if let Ok(summary) = provider.complete(req, cancel).await {
                 if !summary.is_empty() {
                     let key = format!("ai_summary:{}", chat_id);
@@ -76,6 +98,7 @@ impl AiWorker {
                 }
             }
         });
+        self.summary_handles.push(handle);
     }
 
     /// Cancel any inflight request and fire a new one.
